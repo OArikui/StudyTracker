@@ -1,6 +1,6 @@
 [project]
 name = "study-tracker"
-version = "3.4.0"
+version = "3.4.1"
 description = "Personal study tracker designed to complement ManicTime"
 requires-python = ">=3.11"
 dependencies = [
