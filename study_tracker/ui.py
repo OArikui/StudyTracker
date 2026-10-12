@@ -1240,7 +1240,12 @@ class MainWindow(QMainWindow):
         self.fullscreen_media_status = QLabel(self._media_status_text)
         self.fullscreen_media_status.setStyleSheet("color: #7f8996; font-size: 11px;")
         controls.addWidget(self.fullscreen_media_status, 1)
+        stamp_button = QPushButton("スタンプ")
+        stamp_button.setMinimumHeight(40)
+        stamp_button.clicked.connect(self._show_fullscreen_stamp_popup)
+        controls.addWidget(stamp_button)
         blackout_button = QPushButton("画面を暗転 (B)")
+        blackout_button.setMinimumHeight(40)
         blackout_button.clicked.connect(self._toggle_fullscreen_blackout)
         controls.addWidget(blackout_button)
         exit_button = QPushButton("終了 (Esc)")
@@ -1264,7 +1269,85 @@ class MainWindow(QMainWindow):
         self._fullscreen_window = window
         self._set_fullscreen_blackout(False)
         self._refresh_fullscreen_clock()
+        self._build_fullscreen_stamp_popup(window)
         window.showFullScreen()
+
+    def _build_fullscreen_stamp_popup(self, window):
+        popup = QDialog(window, Qt.WindowType.Popup)
+        popup.setWindowTitle("学習スタンプ")
+        popup.setMinimumWidth(360)
+        popup_layout = QVBoxLayout(popup)
+        popup_layout.addWidget(QLabel("現在の学習単位位置を入力"))
+        self.fullscreen_stamp_input = QLineEdit(popup)
+        self.fullscreen_stamp_input.setPlaceholderText("例: 120")
+        self.fullscreen_stamp_input.setValidator(QIntValidator(0, 999999, self.fullscreen_stamp_input))
+        self.fullscreen_stamp_input.returnPressed.connect(self._record_fullscreen_stamp)
+        popup_layout.addWidget(self.fullscreen_stamp_input)
+        stamp_actions = QHBoxLayout()
+        stamp_save = QPushButton("記録", popup)
+        stamp_save.clicked.connect(self._record_fullscreen_stamp)
+        stamp_actions.addWidget(stamp_save)
+        history_button = QPushButton("履歴を表示", popup)
+        history_button.clicked.connect(self._toggle_fullscreen_stamp_history)
+        stamp_actions.addWidget(history_button)
+        popup_layout.addLayout(stamp_actions)
+        self.fullscreen_stamp_history = QListWidget(popup)
+        self.fullscreen_stamp_history.setMaximumHeight(180)
+        self.fullscreen_stamp_history.hide()
+        popup_layout.addWidget(self.fullscreen_stamp_history)
+        self.fullscreen_stamp_history_button = history_button
+        self.fullscreen_stamp_popup = popup
+        self._render_fullscreen_stamp_history()
+
+    def _show_fullscreen_stamp_popup(self):
+        popup = getattr(self, "fullscreen_stamp_popup", None)
+        window = self._fullscreen_window
+        if popup is None or window is None:
+            return
+        if popup.isVisible():
+            popup.hide()
+            return
+        popup.adjustSize()
+        popup.move(
+            window.geometry().center().x() - popup.width() // 2,
+            window.geometry().center().y() - popup.height() // 2,
+        )
+        popup.show()
+        self.fullscreen_stamp_input.setFocus()
+
+    def _toggle_fullscreen_stamp_history(self):
+        history = getattr(self, "fullscreen_stamp_history", None)
+        if history is None:
+            return
+        visible = not history.isVisible()
+        history.setVisible(visible)
+        self.fullscreen_stamp_history_button.setText("履歴を隠す" if visible else "履歴を表示")
+        if visible:
+            self._render_fullscreen_stamp_history()
+            self.fullscreen_stamp_popup.adjustSize()
+
+    def _record_fullscreen_stamp(self):
+        value = self.fullscreen_stamp_input.text().strip()
+        if not value:
+            self.fullscreen_stamp_input.setFocus()
+            return
+        self.timestamp_input.setText(value)
+        self.record_timestamp()
+        self.fullscreen_stamp_input.clear()
+        self._render_fullscreen_stamp_history()
+        self.fullscreen_stamp_input.setFocus()
+
+    def _render_fullscreen_stamp_history(self):
+        history = getattr(self, "fullscreen_stamp_history", None)
+        if history is None:
+            return
+        history.clear()
+        timestamp_start = self.current_content_started_at or self.segment_started
+        if not self.session_id or timestamp_start is None:
+            return
+        for row in self.db.timestamps_for_session(self.session_id, timestamp_start, now_jst()):
+            at = datetime.fromisoformat(row["at"]).astimezone(JST)
+            history.addItem(f"{at.strftime('%H:%M:%S')}    {row['location']}")
 
     def _fullscreen_window_closed(self, *_args):
         self._fullscreen_window = None
@@ -1432,6 +1515,7 @@ class MainWindow(QMainWindow):
         for r in rows:
             at = datetime.fromisoformat(r["at"]).astimezone(JST)
             self.timestamp_list.addItem(f"{at.strftime('%H:%M:%S')}    {r['location']}")
+        self._render_fullscreen_stamp_history()
 
     def current_text(self):
         if not self.current_rows:
