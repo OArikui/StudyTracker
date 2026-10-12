@@ -24,7 +24,7 @@ SQLite のテーブル構造、`segments.row_json` の正規キー、日時形�
 
 ## バージョン
 
-StudyTracker 本体: **3.3.2** / 外部 ViewerPack: **0.8.1**
+StudyTracker 本体: **3.4.0** / 外部 ViewerPack: **0.8.1**
 
 
 ## プリセット登録の注意
