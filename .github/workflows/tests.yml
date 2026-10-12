@@ -23,5 +23,8 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Verify editable install with Windows media extras
         run: python -m pip install -e ".[windows-media]"
+      - name: Verify Windows media WinRT imports
+        run: >-
+          python -c "import winrt.windows.foundation.collections; from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager; print('WinRT media imports OK')"
       - name: Run tests
         run: python -m pytest -q
