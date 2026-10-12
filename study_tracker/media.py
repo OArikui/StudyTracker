@@ -59,6 +59,24 @@ def unregister_global_hotkeys(hwnd: int, registered: list[int]) -> None:
         user32.UnregisterHotKey(wintypes.HWND(hwnd), hotkey_id)
 
 
+def _timespan_seconds(value) -> float:
+    """Convert a WinRT TimeSpan/datetime.timedelta or numeric value to seconds."""
+    if value is None:
+        return 0.0
+    total_seconds = getattr(value, "total_seconds", None)
+    if callable(total_seconds):
+        try:
+            return float(total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+    try:
+        numeric = float(value)
+        # Some WinRT projections expose TimeSpan as 100-nanosecond ticks.
+        return numeric / 10_000_000 if abs(numeric) > 10_000_000 else numeric
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
 class MediaSessionReader(QThread):
     """Poll Windows GSMTC sessions without blocking the Qt UI.
 
@@ -85,12 +103,19 @@ class MediaSessionReader(QThread):
                 props = await session.try_get_media_properties_async()
                 playback = session.get_playback_info()
                 status = str(playback.playback_status).rsplit(".", 1)[-1]
+                timeline = session.get_timeline_properties()
+                position = _timespan_seconds(getattr(timeline, "position", None))
+                end_time = _timespan_seconds(getattr(timeline, "end_time", None))
+                start_time = _timespan_seconds(getattr(timeline, "start_time", None))
+                duration = max(0.0, end_time - start_time)
                 output.append({
                     "app_id": app_id,
                     "title": str(props.title or ""),
                     "artist": str(props.artist or ""),
                     "album": str(props.album_title or ""),
                     "status": status,
+                    "position": max(0.0, position - start_time),
+                    "duration": duration,
                 })
             except Exception:
                 continue
@@ -112,6 +137,35 @@ class MediaSessionReader(QThread):
 
     def run(self) -> None:
         asyncio.run(self._poll())
+
+
+async def _try_seek_session(app_id: str, position_seconds: float) -> bool:
+    from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager
+    manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
+    for session in manager.get_sessions():
+        if str(session.source_app_user_model_id) != app_id:
+            continue
+        position_ticks = max(0, int(position_seconds * 10_000_000))
+        await session.try_change_playback_position_async(position_ticks)
+        return True
+    return False
+
+
+def seek_session_position(app_id: str, position_seconds: float) -> None:
+    """Seek the selected Windows media session; no-op if the session API is unavailable."""
+    import threading
+
+    if not IS_WINDOWS or not app_id:
+        return
+
+    def worker():
+        try:
+            asyncio.run(_try_seek_session(app_id, position_seconds))
+        except Exception:
+            # Seeking is optional; do not disturb playback if the player does not support it.
+            return
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 async def _try_session_action(app_id: str, action: str) -> bool:
