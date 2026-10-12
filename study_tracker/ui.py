@@ -946,6 +946,7 @@ class MainWindow(QMainWindow):
         self.analog_clock_widget.setToolTip(
             "針は現在時刻、外周の薄い色は今日の学習区間（青: Active、黄灰: Passive）"
         )
+        self.analog_clock_widget.setVisible(False)
         clock_row.addWidget(self.analog_clock_widget, 0, Qt.AlignmentFlag.AlignCenter)
         layout.addLayout(clock_row)
 
@@ -997,7 +998,6 @@ class MainWindow(QMainWindow):
         self.media_status.setMaximumWidth(280)
         self.media_status.setWordWrap(True)
         media_layout.addWidget(self.media_status)
-        layout.addWidget(self.media_panel)
         self.media_panel.setVisible(self.db.get_setting("media_enabled", "0") == "1")
         self._apply_media_settings()
 
@@ -1052,6 +1052,13 @@ class MainWindow(QMainWindow):
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
+
+        media_separator = QFrame()
+        media_separator.setFrameShape(QFrame.Shape.HLine)
+        media_separator.setFrameShadow(QFrame.Shadow.Plain)
+        media_separator.setStyleSheet("color: #707780; max-height: 1px;")
+        layout.addWidget(media_separator)
+        layout.addWidget(self.media_panel)
 
         self.setCentralWidget(root)
         self.apply_keep_awake(self.active and self.awake.isChecked())
