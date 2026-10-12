@@ -48,6 +48,7 @@ class AnalogStudyClock(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumSize(150, 150)
         self.setMaximumSize(220, 220)
         self.setAccessibleName("今日の学習履歴付きアナログ時計")
@@ -89,7 +90,9 @@ class AnalogStudyClock(QWidget):
         radius = side / 2 - 9
         ring_rect = QRectF(cx - radius, cy - radius, radius * 2, radius * 2)
         painter.setPen(QPen(QColor("#e8edf2"), max(5, int(radius * 0.075))))
-        painter.setBrush(QBrush(QColor("#fbfcfd")))
+        face_color = QColor("#fbfcfd")
+        face_color.setAlpha(125)
+        painter.setBrush(QBrush(face_color))
         painter.drawEllipse(ring_rect)
 
         now = now_jst()
@@ -111,7 +114,9 @@ class AnalogStudyClock(QWidget):
         face_radius = radius * 0.78
         face = QRectF(cx - face_radius, cy - face_radius, face_radius * 2, face_radius * 2)
         painter.setPen(QPen(QColor("#d8dee6"), 1.3))
-        painter.setBrush(QBrush(QColor("#ffffff")))
+        face_color = QColor("#ffffff")
+        face_color.setAlpha(150)
+        painter.setBrush(QBrush(face_color))
         painter.drawEllipse(face)
 
         for tick in range(60):
@@ -954,7 +959,13 @@ class MainWindow(QMainWindow):
         self.mode = QComboBox()
         self.mode.addItems(["日本標準時", "カレント勉強時間", "合計勉強時間"])
         self.mode.currentTextChanged.connect(lambda _: self.tick())
-        self.mode.hide()
+        self.mode.setToolTip("時計表示を選択")
+
+        layout.addWidget(self.mode, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.awake = QCheckBox("Active中はWindowsのスリープを防止")
+        self.awake.setChecked(True)
+        self.awake.toggled.connect(self.apply_keep_awake)
+        layout.addWidget(self.awake)
 
         clock_row = QHBoxLayout()
         self.clock = QLabel()
@@ -1026,18 +1037,20 @@ class MainWindow(QMainWindow):
         self.media_panel.setVisible(self.db.get_setting("media_enabled", "0") == "1")
         self._apply_media_settings()
 
+        study_stamp_row = QHBoxLayout()
+        study_panel = QGroupBox("カレント学習内容")
+        study_layout = QVBoxLayout(study_panel)
         self.current = QLabel()
         self.current.setWordWrap(True)
         self.current.setStyleSheet("font-size: 19px; padding: 14px;")
-        layout.addWidget(QLabel("カレント学習内容"))
-        layout.addWidget(self.current)
+        study_layout.addWidget(self.current)
+        study_stamp_row.addWidget(study_panel, 3)
 
         timestamp_box = QGroupBox("学習タイムスタンプ")
-        timestamp_layout = QHBoxLayout(timestamp_box)
-
+        timestamp_layout = QVBoxLayout(timestamp_box)
         timestamp_input_panel = QWidget()
         input_layout = QVBoxLayout(timestamp_input_panel)
-        input_layout.setContentsMargins(0, 0, 8, 0)
+        input_layout.setContentsMargins(0, 0, 0, 0)
         input_layout.addWidget(QLabel("現在の学習単位位置"))
         timestamp_row = QHBoxLayout()
         self.timestamp_input = QLineEdit()
@@ -1052,25 +1065,14 @@ class MainWindow(QMainWindow):
         self.timestamp_status = QLabel("まだタイムスタンプはありません。")
         self.timestamp_status.setWordWrap(True)
         input_layout.addWidget(self.timestamp_status)
-        input_layout.addStretch()
-
-        history_panel = QWidget()
-        history_layout = QVBoxLayout(history_panel)
-        history_layout.setContentsMargins(8, 0, 0, 0)
-        history_layout.addWidget(QLabel("タイムスタンプ履歴"))
+        timestamp_layout.addWidget(timestamp_input_panel)
+        timestamp_layout.addWidget(QLabel("タイムスタンプ履歴"))
         self.timestamp_list = QListWidget()
-        self.timestamp_list.setMinimumHeight(130)
-        self.timestamp_list.setMaximumHeight(220)
-        history_layout.addWidget(self.timestamp_list, 1)
-
-        timestamp_layout.addWidget(timestamp_input_panel, 1)
-        timestamp_layout.addWidget(history_panel, 1)
-        layout.addWidget(timestamp_box)
-
-        self.awake = QCheckBox("Active中はWindowsのスリープを防止")
-        self.awake.setChecked(True)
-        self.awake.toggled.connect(self.apply_keep_awake)
-        layout.addWidget(self.awake)
+        self.timestamp_list.setMinimumHeight(90)
+        self.timestamp_list.setMaximumHeight(170)
+        timestamp_layout.addWidget(self.timestamp_list, 1)
+        study_stamp_row.addWidget(timestamp_box, 2)
+        layout.addLayout(study_stamp_row)
 
         hint = QLabel(
             "Passive中は学習時間に加算しません。Active/Passiveの切替は区間として保存されます。"
@@ -1191,6 +1193,13 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(8)
 
+        self.fullscreen_mode = QComboBox()
+        self.fullscreen_mode.addItems(["日本標準時", "カレント勉強時間", "合計勉強時間"])
+        self.fullscreen_mode.setCurrentText(self.mode.currentText())
+        self.fullscreen_mode.currentTextChanged.connect(lambda value: (self.mode.setCurrentText(value), self._refresh_fullscreen_clock()))
+        self.fullscreen_mode.setMaximumWidth(220)
+        root.addWidget(self.fullscreen_mode, 0, Qt.AlignmentFlag.AlignHCenter)
+
         self.fullscreen_date = QLabel()
         self.fullscreen_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fullscreen_date.setStyleSheet(
@@ -1286,13 +1295,23 @@ class MainWindow(QMainWindow):
             button.setMinimumWidth(112 if action != "toggle" else 150)
             button.clicked.connect(lambda checked=False, a=action: self._media_control(a))
             controls.addWidget(button)
+            if action == "toggle":
+                self.fullscreen_playback_button = button
         self.fullscreen_media_status = QLabel(self._media_status_text)
         self.fullscreen_media_status.setStyleSheet("color: #7f8996; font-size: 11px;")
         controls.addWidget(self.fullscreen_media_status, 1)
-        stamp_button = QPushButton("スタンプ")
-        stamp_button.setMinimumHeight(40)
-        stamp_button.clicked.connect(self._show_fullscreen_stamp_popup)
-        controls.addWidget(stamp_button)
+        self.fullscreen_stamp_input = QLineEdit()
+        self.fullscreen_stamp_input.setPlaceholderText("学習位置を入力して Enter")
+        self.fullscreen_stamp_input.setValidator(QIntValidator(0, 999999, self.fullscreen_stamp_input))
+        self.fullscreen_stamp_input.setFixedWidth(160)
+        self.fullscreen_stamp_input.returnPressed.connect(self._record_fullscreen_stamp)
+        controls.addWidget(self.fullscreen_stamp_input)
+        stamp_save = QPushButton("記録")
+        stamp_save.clicked.connect(self._record_fullscreen_stamp)
+        controls.addWidget(stamp_save)
+        stamp_history_button = QPushButton("履歴")
+        stamp_history_button.clicked.connect(self._toggle_fullscreen_stamp_history)
+        controls.addWidget(stamp_history_button)
         blackout_button = QPushButton("画面を暗転 (B)")
         blackout_button.setMinimumHeight(40)
         blackout_button.clicked.connect(self._toggle_fullscreen_blackout)
@@ -1419,7 +1438,13 @@ class MainWindow(QMainWindow):
             return
         now = now_jst()
         self.fullscreen_date.setText(now.strftime("%Y年%m月%d日 (%a)"))
-        self.fullscreen_clock.setText(now.strftime("%H:%M:%S"))
+        display_mode = self.fullscreen_mode.currentText() if hasattr(self, "fullscreen_mode") else self.mode.currentText()
+        if display_mode == "カレント勉強時間":
+            self.fullscreen_clock.setText(fmt_duration(current_seconds))
+        elif display_mode == "合計勉強時間":
+            self.fullscreen_clock.setText(fmt_duration(total_seconds))
+        else:
+            self.fullscreen_clock.setText(now.strftime("%H:%M:%S"))
         current_seconds = self.current_active_accumulated
         if self.segment_started and self.active:
             current_seconds += max(0, (now - self.segment_started).total_seconds())
@@ -1446,6 +1471,14 @@ class MainWindow(QMainWindow):
             self._media_sessions[0] if self._media_sessions else None,
         )
         self.fullscreen_media_status.setText(self._media_status_text)
+        if hasattr(self, "fullscreen_playback_button"):
+            status = str(selected.get("status", "")).lower() if selected else ""
+            self.fullscreen_playback_button.setText(
+                "一時停止中" if status in {"playing", "4"} else "再生中 / 切替"
+            )
+            self.fullscreen_playback_button.setToolTip(
+                "現在の再生状態: " + (status or "不明")
+            )
         if selected:
             title = " — ".join(
                 value for value in (selected.get("title", ""), selected.get("artist", "")) if value
@@ -1596,10 +1629,16 @@ class MainWindow(QMainWindow):
                 total_seconds += max(0, (now - self.segment_started).total_seconds())
         else:
             total_seconds = 0
-        self.clock.setText(
-            f"{now.strftime('%H:%M:%S')} JST\n"
-            f"Current  {fmt_duration(current_seconds)}    Total  {fmt_duration(total_seconds)}"
-        )
+        self._current_display_seconds = current_seconds
+        self._total_display_seconds = total_seconds
+        display_mode = self.mode.currentText()
+        if display_mode == "カレント勉強時間":
+            clock_text = fmt_duration(current_seconds)
+        elif display_mode == "合計勉強時間":
+            clock_text = fmt_duration(total_seconds)
+        else:
+            clock_text = f"{now.strftime('%H:%M:%S')} JST"
+        self.clock.setText(clock_text)
 
         self.current.setText(self.current_text())
         self.refresh_analog_clock()
