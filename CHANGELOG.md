@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.5.8 — 2026-10-12
+
+### Fixed
+- `winrt.windows.foundation.collections` が見つからない問題を修正。Windows Media optional dependency に `winrt-Windows.Foundation.Collections` を追加。
+
+
 ## 3.5.7 — 2026-10-12
 
 ### Fixed
