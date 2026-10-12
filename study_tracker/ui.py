@@ -1074,6 +1074,9 @@ class MainWindow(QMainWindow):
         content = getattr(window, "_study_content", None)
         if content is not None:
             content.setVisible(not self._fullscreen_blackout)
+        media_content = getattr(window, "_media_content", None)
+        if media_content is not None:
+            media_content.setVisible(not self._fullscreen_blackout)
         window.setStyleSheet("background: #000000;" if self._fullscreen_blackout else
                              "background: #101318;")
         window.setCursor(Qt.CursorShape.BlankCursor if self._fullscreen_blackout else Qt.CursorShape.ArrowCursor)
@@ -1194,6 +1197,7 @@ class MainWindow(QMainWindow):
         controls.addStretch(1)
         media_layout.addLayout(controls)
         root.addWidget(media_frame, 0)
+        window._media_content = media_frame
 
         escape = QShortcut(QKeySequence("Escape"), window)
         escape.setContext(Qt.ShortcutContext.WindowShortcut)
