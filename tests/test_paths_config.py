@@ -58,6 +58,68 @@ def test_config_directory_can_be_relocated_and_discovered(tmp_path, monkeypatch)
     assert paths.CONFIG_PATH.is_file()
 
 
+
+def test_legacy_default_paths_migrate_without_overwriting_existing_files(tmp_path, monkeypatch):
+    import json
+    import sqlite3
+
+    app_root = tmp_path / "StudyTracker_v3_3_2"
+    _, config_dir = _isolate_paths(tmp_path, monkeypatch, app_root=app_root)
+    legacy_data = tmp_path / "legacy-home" / "StudyTracker"
+    legacy_data.mkdir(parents=True)
+    monkeypatch.setattr(paths, "LEGACY_DATA_DIR", legacy_data)
+
+    legacy_db = legacy_data / "study_tracker.sqlite3"
+    connection = sqlite3.connect(legacy_db)
+    try:
+        connection.execute("CREATE TABLE sessions (id INTEGER PRIMARY KEY, marker TEXT)")
+        connection.execute("INSERT INTO sessions(marker) VALUES ('preserve-me')")
+        connection.execute("CREATE TABLE segments (id INTEGER PRIMARY KEY)")
+        connection.commit()
+    finally:
+        connection.close()
+
+    legacy_logs = config_dir / "logs"
+    legacy_logs.mkdir()
+    (legacy_logs / "previous.log").write_text("old log", encoding="utf-8")
+    legacy_exports = legacy_data / "exports"
+    legacy_exports.mkdir()
+    (legacy_exports / "old.csv").write_text("old export", encoding="utf-8")
+    legacy_pack = app_root / "StudyTrackerViewerPack_v0.8.1-StudyViewer.zip"
+    legacy_pack.write_bytes(b"old viewer package")
+
+    paths.CONFIG_PATH.write_text(json.dumps({
+        "config_dir": str(config_dir),
+        "db_path": str(legacy_db),
+        "log_dir": str(legacy_logs),
+        "export_dir": str(legacy_exports),
+        "ViewerPackPath": str(legacy_pack),
+    }), encoding="utf-8")
+
+    loaded = paths.load_config()
+    new_root = app_root / "user_data"
+
+    assert Path(loaded["config_dir"]) == new_root / "config"
+    assert Path(loaded["db_path"]) == new_root / "records" / "study_tracker.sqlite3"
+    assert Path(loaded["log_dir"]) == new_root / "logs"
+    assert Path(loaded["export_dir"]) == new_root / "exports"
+    assert Path(loaded["ViewerPackPath"]) == new_root / "packages" / legacy_pack.name
+
+    migrated = sqlite3.connect(loaded["db_path"])
+    try:
+        assert migrated.execute("SELECT marker FROM sessions").fetchone() == ("preserve-me",)
+    finally:
+        migrated.close()
+
+    # Migration copies rather than moves legacy files, so the old paths remain recoverable.
+    assert legacy_db.is_file()
+    assert (legacy_logs / "previous.log").read_text(encoding="utf-8") == "old log"
+    assert (new_root / "logs" / "previous.log").read_text(encoding="utf-8") == "old log"
+    assert (legacy_exports / "old.csv").is_file()
+    assert (new_root / "exports" / "old.csv").read_text(encoding="utf-8") == "old export"
+    assert legacy_pack.is_file()
+    assert (new_root / "packages" / legacy_pack.name).read_bytes() == b"old viewer package"
+
 def test_legacy_default_viewer_pack_migrates_to_current_root(tmp_path, monkeypatch):
     current_root = tmp_path / "StudyTracker_v3_3_2"
     _isolate_paths(tmp_path, monkeypatch, app_root=current_root)
