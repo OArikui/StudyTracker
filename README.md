@@ -9,6 +9,14 @@ python -m pip install -r requirements.txt
 python .\\main.py
 ```
 
+パッケージとして編集可能インストールする場合（Windowsメディア情報取得の追加依存関係を含む）:
+
+```powershell
+python -m pip install -e ".[windows-media]"
+```
+
+プロジェクトのパッケージ設定では `study_tracker` のみを配布対象にし、実行時データ用の `user_data` はパッケージ探索から除外しています。
+
 Viewer を起動する場合:
 
 ```powershell
@@ -25,7 +33,7 @@ SQLite のテーブル構造、`segments.row_json` の正規キー、日時形�
 
 ## バージョン
 
-StudyTracker 本体: **3.5.4** / 外部 ViewerPack: **0.8.1**
+StudyTracker 本体: **3.5.5** / 外部 ViewerPack: **0.8.1**
 
 学習中の時計表示は「日本標準時」「カレント勉強時間」「合計勉強時間」から選択できます。待機画面では学習内容とスタンプ入力・履歴を中央にまとめて余白を抑え、アナログ時計とスリープ防止のチェックボックスを隣接配置しています。状態ボタンの色で ACTIVE / PASSIVE を確認できます。全画面表示ではスタンプ入力欄と再生状態を確認でき、暗転中は時計モード選択欄を含む全UIを隠します。
 
