@@ -172,8 +172,9 @@ class MainWindow(QMainWindow):
         self._fullscreen_window = None
         self._fullscreen_blackout = False
         self._timer_deadline = None
-        self._timer_remaining_seconds = 0
+        self._timer_remaining_seconds = 25 * 60
         self._timer_running = False
+        self._timer_has_started = False
         self._media_seek_dragging = False
 
         self.mtc = ManicTimeAdapter(ManicTimeConfig(
@@ -1035,12 +1036,13 @@ class MainWindow(QMainWindow):
             self._timer_running = False
             self._timer_deadline = None
         else:
-            if self._timer_remaining_seconds <= 0:
+            if not self._timer_has_started or self._timer_remaining_seconds <= 0:
                 spin = getattr(self, "fullscreen_timer_minutes", None)
                 minutes = spin.value() if spin is not None else 25
                 self._timer_remaining_seconds = minutes * 60
             self._timer_deadline = now_jst() + timedelta(seconds=self._timer_remaining_seconds)
             self._timer_running = True
+            self._timer_has_started = True
         self._refresh_fullscreen_clock()
 
     def _reset_countdown(self):
@@ -1048,6 +1050,7 @@ class MainWindow(QMainWindow):
         self._timer_deadline = None
         spin = getattr(self, "fullscreen_timer_minutes", None)
         self._timer_remaining_seconds = (spin.value() if spin is not None else 25) * 60
+        self._timer_has_started = False
         self._refresh_fullscreen_clock()
 
     def _update_countdown(self):
@@ -1238,7 +1241,9 @@ class MainWindow(QMainWindow):
             "終了" if self._timer_remaining_seconds == 0 and not self._timer_running
             else self._fullscreen_timer_text()
         )
-        self.fullscreen_timer_start.setText("一時停止" if self._timer_running else "再開" if self._timer_remaining_seconds else "開始")
+        self.fullscreen_timer_start.setText(
+            "一時停止" if self._timer_running else "再開" if self._timer_has_started else "開始"
+        )
         selected = next(
             (item for item in self._media_sessions if item.get("app_id") == self._selected_media_app_id()),
             self._media_sessions[0] if self._media_sessions else None,
