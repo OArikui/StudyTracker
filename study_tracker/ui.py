@@ -694,11 +694,11 @@ class MainWindow(QMainWindow):
         root = QWidget()
         layout = QVBoxLayout(root)
         if not self.session_id:
-            self.setWindowTitle("Study Tracker V3.5.3")
+            self.setWindowTitle("Study Tracker V3.5.4")
 
         self._add_error_banner(layout)
 
-        title = QLabel("Study Tracker V3.5.3")
+        title = QLabel("Study Tracker V3.5.4")
         title.setStyleSheet("font-size: 30px; font-weight: bold;")
         layout.addWidget(title)
 
@@ -1016,14 +1016,16 @@ class MainWindow(QMainWindow):
 
         self.analog_toggle = QCheckBox("アナログ時計を表示")
         self.analog_toggle.setChecked(False)
+        state_row.addSpacing(10)
         self.analog_toggle.toggled.connect(self.analog_clock_widget.setVisible)
         state_row.addWidget(self.analog_toggle)
 
-        state_row.addStretch(1)
         self.awake = QCheckBox("Active中はWindowsのスリープを防止")
         self.awake.setChecked(True)
         self.awake.toggled.connect(self.apply_keep_awake)
+        state_row.addSpacing(10)
         state_row.addWidget(self.awake)
+        state_row.addStretch(1)
 
         layout.addLayout(state_row)
         fullscreen_row = QHBoxLayout()
@@ -1061,16 +1063,22 @@ class MainWindow(QMainWindow):
         self._apply_media_settings()
 
         study_stamp_row = QHBoxLayout()
+        study_stamp_row.setContentsMargins(0, 0, 0, 0)
+        study_stamp_row.setSpacing(12)
+        study_stamp_row.addStretch(1)
+
         study_panel = QGroupBox("カレント学習内容")
         study_layout = QVBoxLayout(study_panel)
+        study_layout.setContentsMargins(12, 16, 12, 12)
         self.current = QLabel()
         self.current.setWordWrap(True)
         self.current.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.current.setMaximumWidth(440)
-        self.current.setStyleSheet("font-size: 19px; padding: 8px;")
-        study_panel.setMaximumWidth(560)
+        self.current.setStyleSheet("font-size: 18px; padding: 4px;")
+        study_panel.setMinimumWidth(440)
+        study_panel.setMaximumWidth(520)
         study_layout.addWidget(self.current)
-        study_stamp_row.addWidget(study_panel, 3)
+        study_stamp_row.addWidget(study_panel)
 
         timestamp_box = QGroupBox("学習タイムスタンプ")
         timestamp_layout = QVBoxLayout(timestamp_box)
@@ -1098,10 +1106,12 @@ class MainWindow(QMainWindow):
         self.timestamp_list = QListWidget()
         self.timestamp_list.setMinimumHeight(65)
         self.timestamp_list.setMaximumHeight(115)
-        self.timestamp_list.setMaximumWidth(320)
-        timestamp_box.setMaximumWidth(420)
+        self.timestamp_list.setMaximumWidth(300)
+        timestamp_box.setMinimumWidth(350)
+        timestamp_box.setMaximumWidth(380)
         timestamp_layout.addWidget(self.timestamp_list, 1)
-        study_stamp_row.addWidget(timestamp_box, 2)
+        study_stamp_row.addWidget(timestamp_box)
+        study_stamp_row.addStretch(1)
         layout.addLayout(study_stamp_row)
 
         hint = QLabel(
@@ -1717,7 +1727,7 @@ class MainWindow(QMainWindow):
             r = self.current_rows[0]
             self.setWindowTitle(self.mtc.window_title(r.material, r.position))
         else:
-            self.setWindowTitle("Study Tracker V3.5.3")
+            self.setWindowTitle("Study Tracker V3.5.4")
 
     # ---- keep awake ----
     def apply_keep_awake(self, enabled):
