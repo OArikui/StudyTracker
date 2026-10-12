@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem, QPushButton,
     QMessageBox, QLabel, QTextEdit, QFormLayout,
     QComboBox, QLineEdit, QDialogButtonBox, QDateEdit, QTableWidget,
-    QTableWidgetItem, QCheckBox, QFileDialog, QWidget, QScrollArea, QGroupBox
+    QTableWidgetItem, QCheckBox, QFileDialog, QWidget, QScrollArea, QGroupBox, QSpinBox
 )
 from .models import COLUMNS
 
@@ -733,3 +733,147 @@ class DirectorySettingsDialog(QDialog):
             QMessageBox.critical(self, "保存エラー", f"設定を保存できませんでした。\n{exc}")
             return
         self.accept()
+
+
+class MediaSettingsDialog(QDialog):
+    """Compact opt-in settings for Windows-wide media controls."""
+
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Windowsメディア操作設定")
+        self.setMinimumWidth(460)
+        root = QVBoxLayout(self)
+        self.enabled = QCheckBox("Windowsメディア操作を有効にする")
+        self.enabled.setChecked(db.get_setting("media_enabled", "0") == "1")
+        root.addWidget(self.enabled)
+        root.addWidget(QLabel(
+            "有効時は学習画面に小さな操作欄を表示し、グローバルショートカットを登録します。"
+            "再生・前後操作は選択したWindowsメディアセッションを優先します。"
+        ))
+        root.addWidget(QLabel(
+            "再生 / 一時停止: Ctrl+Alt+Space\n"
+            "前のメディア: Ctrl+Alt+Left\n"
+            "次のメディア: Ctrl+Alt+Right"
+        ))
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+    def accept(self):
+        self.db.set_setting("media_enabled", "1" if self.enabled.isChecked() else "0")
+        super().accept()
+
+
+class BackupSettingsDialog(QDialog):
+    """Configure automatic SQLite backups and create an immediate snapshot."""
+
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("定期バックアップ設定")
+        self.setMinimumWidth(560)
+
+        root = QVBoxLayout(self)
+        root.addWidget(QLabel(
+            "SQLite の整合性を保つ方法でバックアップします。古い世代の削除は、"
+            "新しいバックアップの作成が成功した後に行います。"
+        ))
+
+        self.enabled = QCheckBox("定期バックアップを有効にする")
+        self.enabled.setChecked(db.get_setting("backup_enabled", "0") == "1")
+        root.addWidget(self.enabled)
+
+        form = QFormLayout()
+        self.interval = QComboBox()
+        for label, hours in (
+            ("6時間ごと", 6),
+            ("12時間ごと", 12),
+            ("毎日", 24),
+            ("毎週", 168),
+        ):
+            self.interval.addItem(label, hours)
+        try:
+            interval_hours = int(db.get_setting("backup_interval_hours", "24"))
+        except (TypeError, ValueError):
+            interval_hours = 24
+        interval_index = self.interval.findData(interval_hours)
+        self.interval.setCurrentIndex(interval_index if interval_index >= 0 else 2)
+        form.addRow("実行間隔", self.interval)
+
+        self.directory = QLineEdit(
+            db.get_setting("backup_dir", str(db.path.parent / "backups"))
+        )
+        choose = QPushButton("参照...")
+        choose.clicked.connect(self.choose_directory)
+        directory_row = QHBoxLayout()
+        directory_row.addWidget(self.directory, 1)
+        directory_row.addWidget(choose)
+        directory_widget = QWidget()
+        directory_widget.setLayout(directory_row)
+        form.addRow("保存先", directory_widget)
+
+        self.retention = QSpinBox()
+        self.retention.setRange(1, 365)
+        try:
+            retained = int(db.get_setting("backup_retention_count", "14"))
+        except (TypeError, ValueError):
+            retained = 14
+        self.retention.setValue(max(1, min(365, retained)))
+        form.addRow("保持する世代数", self.retention)
+        root.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        backup_now = QPushButton("今すぐバックアップ")
+        backup_now.clicked.connect(self.create_now)
+        button_row = QHBoxLayout()
+        button_row.addWidget(backup_now)
+        button_row.addStretch()
+        button_row.addWidget(buttons)
+        root.addLayout(button_row)
+
+    def choose_directory(self):
+        current = self.directory.text().strip() or str(Path.home())
+        selected = QFileDialog.getExistingDirectory(
+            self, "バックアップ保存先を選択", current
+        )
+        if selected:
+            self.directory.setText(selected)
+
+    def create_now(self):
+        destination = self.directory.text().strip()
+        if not destination:
+            QMessageBox.warning(self, "入力エラー", "バックアップ保存先を指定してください。")
+            return
+        try:
+            from .backup import create_backup
+            output = create_backup(
+                self.db.path, destination, self.retention.value()
+            )
+            self.db.set_setting("backup_last_at", datetime.now().astimezone().isoformat())
+            QMessageBox.information(
+                self, "バックアップ完了", f"バックアップを作成しました。\n{output}"
+            )
+        except Exception as exc:
+            logging.getLogger("study_tracker.backup").exception("Manual backup failed")
+            QMessageBox.critical(
+                self, "バックアップ失敗", f"バックアップを作成できませんでした。\n{exc}"
+            )
+
+    def accept(self):
+        destination = self.directory.text().strip()
+        if not destination:
+            QMessageBox.warning(self, "入力エラー", "バックアップ保存先を指定してください。")
+            return
+        self.db.set_setting("backup_enabled", "1" if self.enabled.isChecked() else "0")
+        self.db.set_setting("backup_interval_hours", self.interval.currentData())
+        self.db.set_setting("backup_dir", str(Path(destination).expanduser()))
+        self.db.set_setting("backup_retention_count", self.retention.value())
+        super().accept()

@@ -3,7 +3,16 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
+
+def _viewerpack_project() -> Path:
+    project = ROOT.parent / "viewerpack"
+    if not project.is_dir():
+        pytest.skip("ViewerPack source is maintained outside the StudyTracker repository.")
+    return project
+
 
 
 def test_viewer_launch_passes_host_database_path() -> None:
@@ -31,7 +40,7 @@ def test_duplicate_data_location_menu_and_dialog_removed() -> None:
 
 
 def test_viewer_pack_no_longer_has_own_database_config() -> None:
-    project = ROOT.parent / "viewerpack"
+    project = _viewerpack_project()
     ui_source = (project / "viewer_v0/ui.py").read_text(encoding="utf-8")
     assert "from .config import load_config, save_config" not in ui_source
     assert 'save_config({"db_path": str(path)})' not in ui_source
@@ -39,7 +48,7 @@ def test_viewer_pack_no_longer_has_own_database_config() -> None:
 
 
 def test_viewer_run_accepts_database_path_keyword() -> None:
-    project = ROOT.parent / "viewerpack"
+    project = _viewerpack_project()
     source = (project / "viewer_v0/app.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     run = next(
@@ -50,7 +59,7 @@ def test_viewer_run_accepts_database_path_keyword() -> None:
 
 
 def test_viewer_window_requires_host_database_path() -> None:
-    project = ROOT.parent / "viewerpack"
+    project = _viewerpack_project()
     source = (project / "viewer_v0/ui.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     viewer_class = next(

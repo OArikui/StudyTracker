@@ -24,7 +24,7 @@ SQLite のテーブル構造、`segments.row_json` の正規キー、日時形�
 
 ## バージョン
 
-StudyTracker 本体: **3.3.2** / 外部 ViewerPack: **0.8.1**
+StudyTracker 本体: **3.4.0** / 外部 ViewerPack: **0.8.1**
 
 
 ## プリセット登録の注意
@@ -49,3 +49,16 @@ Viewer は StudyTracker 本体の設定 `db_path` を読み取り、独自の DB
 ### DBパスの設定
 
 DBパスの変更入口は「設定」→「使用ディレクトリ・ViewerPack設定」の「SQLiteデータベース」に一本化しました。旧「データ保存場所」メニューは廃止しています。ViewerPack 側には独立した DB 選択・設定を持たせず、本体が解決した `db_path` を起動引数として渡します。
+
+
+## Windowsメディア操作
+
+「設定」→「Windowsメディア操作」で任意に有効化できます。再生/一時停止、前後のメディア、システム音量操作、グローバルショートカット、優先メディアセッションの選択に対応します。学習中はメディア情報の変化を既存の events テーブルへ記録します。詳細は [Windows メディア操作](docs/windows-media-operations.md) を参照してください。
+
+メディア情報の列挙・セッション指定操作を使う場合は、任意依存関係をインストールしてください。
+
+```powershell
+python -m pip install -e ".[windows-media]"
+```
+
+任意依存関係をインストールしない場合、標準Windowsメディアキーによる操作は利用できますが、GSMTCメタデータ取得は無効になります。
