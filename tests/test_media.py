@@ -11,3 +11,18 @@ def test_windows_virtual_key_constants():
     assert VK_MEDIA_PLAY_PAUSE == 0xB3
     assert VK_MEDIA_NEXT_TRACK == 0xB0
     assert VK_VOLUME_UP == 0xAF
+
+
+def test_timespan_seconds_accepts_timedelta_and_winrt_ticks():
+    from datetime import timedelta
+    from study_tracker.media import _timespan_seconds
+
+    assert _timespan_seconds(timedelta(seconds=42)) == 42
+    assert _timespan_seconds(420_000_000) == 42
+    assert _timespan_seconds(None) == 0
+
+
+def test_media_seek_helper_is_importable():
+    from study_tracker.media import seek_session_position
+
+    assert callable(seek_session_position)
