@@ -1155,6 +1155,9 @@ class MainWindow(QMainWindow):
         if media_content is not None:
             media_content.setVisible(not self._fullscreen_blackout)
         if self._fullscreen_blackout:
+            popup = getattr(self, "fullscreen_stamp_popup", None)
+            if popup is not None:
+                popup.hide()
             window.setStyleSheet("background: #000000;")
         elif self.db.get_setting("app_theme", "dark") == "light":
             window.setStyleSheet("background: #f7f8fa; color: #20252b;")
