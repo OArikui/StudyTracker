@@ -560,6 +560,7 @@ class MainWindow(QMainWindow):
 
         start_at = now_jst()
         self.session_id = self.db.start_session(start_at)
+        self._media_last_payload = None
         self.segment_started = start_at
         self.current_content_started_at = start_at
         self.last_edit_at = self.segment_started
