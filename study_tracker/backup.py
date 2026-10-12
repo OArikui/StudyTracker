@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
 
 BACKUP_GLOB = "study_tracker_backup_*.sqlite3"
+_LOGGER = logging.getLogger(__name__)
 
 
 def create_backup(
@@ -53,23 +56,30 @@ def create_backup(
         integrity = target.execute("PRAGMA integrity_check").fetchone()
         if integrity is None or integrity[0] != "ok":
             raise sqlite3.DatabaseError(f"Backup integrity check failed: {integrity!r}")
-    finally:
-        if target is not None:
-            target.close()
-        if source is not None:
-            source.close()
 
-    try:
+        target.close()
+        target = None
+        source.close()
+        source = None
         os.replace(temporary, destination)
+
         backups = sorted(
             destination_dir.glob(BACKUP_GLOB),
             key=lambda path: path.name,
             reverse=True,
         )
         for old_backup in backups[keep_count:]:
-            old_backup.unlink()
+            try:
+                old_backup.unlink()
+            except OSError:
+                _LOGGER.warning(
+                    "Could not remove expired backup %s", old_backup, exc_info=True
+                )
+        return destination
     finally:
-        if temporary.exists():
+        if target is not None:
+            target.close()
+        if source is not None:
+            source.close()
+        with suppress(OSError):
             temporary.unlink()
-
-    return destination
