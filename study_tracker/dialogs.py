@@ -733,3 +733,36 @@ class DirectorySettingsDialog(QDialog):
             QMessageBox.critical(self, "保存エラー", f"設定を保存できませんでした。\n{exc}")
             return
         self.accept()
+
+
+class MediaSettingsDialog(QDialog):
+    """Compact opt-in settings for Windows-wide media controls."""
+
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Windowsメディア操作設定")
+        self.setMinimumWidth(460)
+        root = QVBoxLayout(self)
+        self.enabled = QCheckBox("Windowsメディア操作を有効にする")
+        self.enabled.setChecked(db.get_setting("media_enabled", "0") == "1")
+        root.addWidget(self.enabled)
+        root.addWidget(QLabel(
+            "有効時は学習画面に小さな操作欄を表示し、グローバルショートカットを登録します。"
+            "再生・前後操作は選択したWindowsメディアセッションを優先します。"
+        ))
+        root.addWidget(QLabel(
+            "再生 / 一時停止: Ctrl+Alt+Space\n"
+            "前のメディア: Ctrl+Alt+Left\n"
+            "次のメディア: Ctrl+Alt+Right"
+        ))
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+    def accept(self):
+        self.db.set_setting("media_enabled", "1" if self.enabled.isChecked() else "0")
+        super().accept()
