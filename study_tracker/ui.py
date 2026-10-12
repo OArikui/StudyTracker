@@ -1017,19 +1017,272 @@ class MainWindow(QMainWindow):
         if self.active:
             self.timestamp_input.setFocus()
 
+    def _format_media_time(self, seconds):
+        seconds = max(0, int(seconds or 0))
+        return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+    def _fullscreen_timer_text(self):
+        remaining = self._timer_remaining_seconds
+        if self._timer_running and self._timer_deadline is not None:
+            remaining = max(0, int((self._timer_deadline - now_jst()).total_seconds() + 0.999))
+        return f"{remaining // 60:02d}:{remaining % 60:02d}"
+
+    def _toggle_countdown(self):
+        if self._timer_running:
+            self._timer_remaining_seconds = max(
+                0, int((self._timer_deadline - now_jst()).total_seconds() + 0.5)
+            ) if self._timer_deadline else self._timer_remaining_seconds
+            self._timer_running = False
+            self._timer_deadline = None
+        else:
+            if self._timer_remaining_seconds <= 0:
+                spin = getattr(self, "fullscreen_timer_minutes", None)
+                minutes = spin.value() if spin is not None else 25
+                self._timer_remaining_seconds = minutes * 60
+            self._timer_deadline = now_jst() + timedelta(seconds=self._timer_remaining_seconds)
+            self._timer_running = True
+        self._refresh_fullscreen_clock()
+
+    def _reset_countdown(self):
+        self._timer_running = False
+        self._timer_deadline = None
+        spin = getattr(self, "fullscreen_timer_minutes", None)
+        self._timer_remaining_seconds = (spin.value() if spin is not None else 25) * 60
+        self._refresh_fullscreen_clock()
+
+    def _update_countdown(self):
+        if self._timer_running and self._timer_deadline is not None:
+            remaining = max(0, int((self._timer_deadline - now_jst()).total_seconds() + 0.999))
+            self._timer_remaining_seconds = remaining
+            if remaining == 0:
+                self._timer_running = False
+                self._timer_deadline = None
+                try:
+                    from PySide6.QtWidgets import QApplication
+                    QApplication.beep()
+                except RuntimeError:
+                    pass
+
+    def _set_fullscreen_blackout(self, enabled):
+        self._fullscreen_blackout = bool(enabled)
+        window = self._fullscreen_window
+        if window is None:
+            return
+        content = getattr(window, "_study_content", None)
+        if content is not None:
+            content.setVisible(not self._fullscreen_blackout)
+        window.setStyleSheet("background: #000000;" if self._fullscreen_blackout else
+                             "background: #101318;")
+        window.setCursor(Qt.CursorShape.BlankCursor if self._fullscreen_blackout else Qt.CursorShape.ArrowCursor)
+
+    def _toggle_fullscreen_blackout(self):
+        self._set_fullscreen_blackout(not self._fullscreen_blackout)
+
+    def _build_fullscreen_clock(self):
+        from PySide6.QtWidgets import QFrame
+
+        window = QWidget(self, Qt.WindowType.Window)
+        window.setWindowTitle("StudyTracker — デジタル時計")
+        window.setStyleSheet("background: #101318; color: #e9edf2;")
+        root = QVBoxLayout(window)
+        root.setContentsMargins(48, 28, 48, 22)
+        root.setSpacing(12)
+
+        content = QWidget(window)
+        content.setStyleSheet("background: transparent; color: #e9edf2;")
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(8)
+
+        self.fullscreen_date = QLabel()
+        self.fullscreen_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fullscreen_date.setStyleSheet("font-size: 20px; color: #929ba8;")
+        content_layout.addWidget(self.fullscreen_date)
+
+        self.fullscreen_clock = QLabel()
+        self.fullscreen_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fullscreen_clock.setMinimumHeight(180)
+        self.fullscreen_clock.setStyleSheet(
+            "font-size: 110px; font-weight: 300; letter-spacing: 2px; color: #f3f5f7;"
+        )
+        content_layout.addWidget(self.fullscreen_clock, 1)
+
+        self.fullscreen_study_time = QLabel()
+        self.fullscreen_study_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fullscreen_study_time.setStyleSheet("font-size: 18px; color: #87919f;")
+        content_layout.addWidget(self.fullscreen_study_time)
+
+        timer_frame = QFrame()
+        timer_frame.setStyleSheet("QFrame { background: #191e25; border-radius: 10px; }")
+        timer_row = QHBoxLayout(timer_frame)
+        timer_row.setContentsMargins(12, 8, 12, 8)
+        timer_row.addStretch(1)
+        timer_row.addWidget(QLabel("タイマー"))
+        self.fullscreen_timer_minutes = QSpinBox()
+        self.fullscreen_timer_minutes.setRange(1, 999)
+        self.fullscreen_timer_minutes.setValue(25)
+        self.fullscreen_timer_minutes.setSuffix(" 分")
+        self.fullscreen_timer_minutes.setFixedWidth(95)
+        timer_row.addWidget(self.fullscreen_timer_minutes)
+        self.fullscreen_timer_value = QLabel("25:00")
+        self.fullscreen_timer_value.setMinimumWidth(90)
+        self.fullscreen_timer_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.fullscreen_timer_value.setStyleSheet("font-size: 22px; font-weight: 600;")
+        timer_row.addWidget(self.fullscreen_timer_value)
+        self.fullscreen_timer_start = QPushButton("開始")
+        self.fullscreen_timer_start.clicked.connect(self._toggle_countdown)
+        timer_row.addWidget(self.fullscreen_timer_start)
+        timer_reset = QPushButton("リセット")
+        timer_reset.clicked.connect(self._reset_countdown)
+        timer_row.addWidget(timer_reset)
+        timer_row.addStretch(1)
+        content_layout.addWidget(timer_frame)
+        root.addWidget(content, 1)
+        window._study_content = content
+
+        media_frame = QFrame()
+        media_frame.setStyleSheet(
+            "QFrame { background: #191e25; border: 1px solid #2c333d; border-radius: 12px; }"
+        )
+        media_layout = QVBoxLayout(media_frame)
+        media_layout.setContentsMargins(16, 10, 16, 10)
+        media_layout.setSpacing(6)
+        self.fullscreen_media_title = QLabel("Windows メディア")
+        self.fullscreen_media_title.setStyleSheet("font-size: 13px; color: #aab3bf;")
+        media_layout.addWidget(self.fullscreen_media_title)
+
+        self.fullscreen_media_position = QSlider(Qt.Orientation.Horizontal)
+        self.fullscreen_media_position.setRange(0, 1)
+        self.fullscreen_media_position.setEnabled(False)
+        self.fullscreen_media_position.sliderPressed.connect(
+            lambda: setattr(self, "_media_seek_dragging", True)
+        )
+        self.fullscreen_media_position.sliderReleased.connect(self._seek_fullscreen_media)
+        media_layout.addWidget(self.fullscreen_media_position)
+
+        time_row = QHBoxLayout()
+        self.fullscreen_media_elapsed = QLabel("00:00")
+        self.fullscreen_media_elapsed.setStyleSheet("color: #929ba8;")
+        self.fullscreen_media_duration = QLabel("--:--")
+        self.fullscreen_media_duration.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.fullscreen_media_duration.setStyleSheet("color: #929ba8;")
+        time_row.addWidget(self.fullscreen_media_elapsed)
+        time_row.addStretch(1)
+        time_row.addWidget(self.fullscreen_media_duration)
+        media_layout.addLayout(time_row)
+
+        controls = QHBoxLayout()
+        controls.addStretch(1)
+        for label, action in [("前の曲", "previous"), ("再生 / 一時停止", "toggle"), ("次の曲", "next")]:
+            button = QPushButton(label)
+            button.setMinimumHeight(36)
+            button.setMinimumWidth(112 if action != "toggle" else 150)
+            button.clicked.connect(lambda checked=False, a=action: self._media_control(a))
+            controls.addWidget(button)
+        self.fullscreen_media_status = QLabel(self._media_status_text)
+        self.fullscreen_media_status.setStyleSheet("color: #7f8996; font-size: 11px;")
+        controls.addWidget(self.fullscreen_media_status, 1)
+        blackout_button = QPushButton("画面を暗転 (B)")
+        blackout_button.clicked.connect(self._toggle_fullscreen_blackout)
+        controls.addWidget(blackout_button)
+        exit_button = QPushButton("終了 (Esc)")
+        exit_button.clicked.connect(self.exit_fullscreen)
+        controls.addWidget(exit_button)
+        controls.addStretch(1)
+        media_layout.addLayout(controls)
+        root.addWidget(media_frame, 0)
+
+        escape = QShortcut(QKeySequence("Escape"), window)
+        escape.setContext(Qt.ShortcutContext.WindowShortcut)
+        escape.activated.connect(self.exit_fullscreen)
+        blackout = QShortcut(QKeySequence("B"), window)
+        blackout.setContext(Qt.ShortcutContext.WindowShortcut)
+        blackout.activated.connect(self._toggle_fullscreen_blackout)
+        play_pause = QShortcut(QKeySequence("Space"), window)
+        play_pause.setContext(Qt.ShortcutContext.WindowShortcut)
+        play_pause.activated.connect(lambda: self._media_control("toggle"))
+        window.destroyed.connect(self._fullscreen_window_closed)
+        self._fullscreen_window = window
+        self._set_fullscreen_blackout(False)
+        self._refresh_fullscreen_clock()
+        window.showFullScreen()
+
+    def _fullscreen_window_closed(self, *_args):
+        self._fullscreen_window = None
+        self._fullscreen_blackout = False
+        if hasattr(self, "fullscreen_button"):
+            self.fullscreen_button.setText("全画面表示")
+
+    def _seek_fullscreen_media(self):
+        self._media_seek_dragging = False
+        app_id = self._selected_media_app_id()
+        if not app_id:
+            return
+        selected = next((item for item in self._media_sessions if item.get("app_id") == app_id), None)
+        if not selected:
+            return
+        seek_session_position(app_id, float(self.fullscreen_media_position.value()))
+
+    def _refresh_fullscreen_clock(self):
+        if self._fullscreen_window is None:
+            return
+        now = now_jst()
+        self.fullscreen_date.setText(now.strftime("%Y年%m月%d日 (%a)"))
+        self.fullscreen_clock.setText(now.strftime("%H:%M:%S"))
+        seconds = self.current_active_accumulated
+        if self.segment_started and self.active:
+            seconds += max(0, (now - self.segment_started).total_seconds())
+        self.fullscreen_study_time.setText(f"学習時間  {fmt_duration(seconds)}")
+        self._update_countdown()
+        self.fullscreen_timer_value.setText(
+            "終了" if self._timer_remaining_seconds == 0 and not self._timer_running
+            else self._fullscreen_timer_text()
+        )
+        self.fullscreen_timer_start.setText("一時停止" if self._timer_running else "再開" if self._timer_remaining_seconds else "開始")
+        selected = next(
+            (item for item in self._media_sessions if item.get("app_id") == self._selected_media_app_id()),
+            self._media_sessions[0] if self._media_sessions else None,
+        )
+        self.fullscreen_media_status.setText(self._media_status_text)
+        if selected:
+            title = " — ".join(
+                value for value in (selected.get("title", ""), selected.get("artist", "")) if value
+            ) or selected.get("app_id", "Windows メディア")
+            self.fullscreen_media_title.setText(title)
+            duration = max(0, int(selected.get("duration", 0) or 0))
+            position = max(0, min(duration, int(selected.get("position", 0) or 0)))
+            if not self._media_seek_dragging:
+                self.fullscreen_media_position.setRange(0, max(1, duration))
+                self.fullscreen_media_position.setValue(position)
+            self.fullscreen_media_position.setEnabled(duration > 0 and bool(selected.get("app_id")))
+            self.fullscreen_media_elapsed.setText(self._format_media_time(position))
+            self.fullscreen_media_duration.setText(self._format_media_time(duration) if duration else "--:--")
+        else:
+            self.fullscreen_media_title.setText("再生中のメディアなし")
+            self.fullscreen_media_position.setRange(0, 1)
+            self.fullscreen_media_position.setValue(0)
+            self.fullscreen_media_position.setEnabled(False)
+            self.fullscreen_media_elapsed.setText("00:00")
+            self.fullscreen_media_duration.setText("--:--")
+
     def exit_fullscreen(self):
-        if self.isFullScreen():
+        window = self._fullscreen_window
+        if window is not None:
+            self._fullscreen_window = None
+            self._fullscreen_blackout = False
+            window.close()
+        elif self.isFullScreen():
             self.showNormal()
-            if hasattr(self, "fullscreen_button"):
-                self.fullscreen_button.setText("全画面表示")
+        if hasattr(self, "fullscreen_button"):
+            self.fullscreen_button.setText("全画面表示")
 
     def toggle_fullscreen(self):
-        if self.isFullScreen():
-            self.showNormal()
-            self.fullscreen_button.setText("全画面表示")
+        if self._fullscreen_window is not None:
+            self.exit_fullscreen()
         else:
-            self.showFullScreen()
-            self.fullscreen_button.setText("ウィンドウ表示")
+            self._build_fullscreen_clock()
+            if hasattr(self, "fullscreen_button"):
+                self.fullscreen_button.setText("ウィンドウ表示")
 
     def refresh_analog_clock(self, force=False):
         if not hasattr(self, "analog_clock_widget"):
@@ -1152,6 +1405,7 @@ class MainWindow(QMainWindow):
         self.clock.setText(value)
         self.current.setText(self.current_text())
         self.refresh_analog_clock()
+        self._refresh_fullscreen_clock()
 
     def update_title(self):
         if self.current_rows:
