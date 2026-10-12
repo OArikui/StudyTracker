@@ -720,7 +720,7 @@ class DirectorySettingsDialog(QDialog):
         cfg = self._load_config()
         for key in ("config_dir", "db_path", "log_dir", "export_dir", "ViewerPackPath", "ViewerFolderPath"):
             value = self.edits[key].text().strip()
-            if not value and key == "ViewerFolderPath":
+            if not value and key in {"ViewerPackPath", "ViewerFolderPath"}:
                 cfg[key] = ""
                 continue
             if not value:
@@ -910,7 +910,8 @@ class BackupSettingsDialog(QDialog):
             inside_user_data = target == USER_DATA_DIR.resolve() or USER_DATA_DIR.resolve() in target.parents
         except OSError:
             inside_user_data = False
-        if inside_user_data or target.drive.lower() == database_path.drive.lower():
+        same_drive = bool(target.drive and database_path.drive and target.drive.lower() == database_path.drive.lower())
+        if inside_user_data or same_drive:
             answer = QMessageBox.warning(
                 self, "バックアップ先の確認",
                 "バックアップ先が user_data 内、または元のDBと同じドライブです。\n"
