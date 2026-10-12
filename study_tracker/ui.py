@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
     QPushButton, QComboBox, QLineEdit, QTextEdit, QTableWidget, QTableWidgetItem,
     QSplitter, QMessageBox, QGroupBox, QCheckBox, QFileDialog, QTabWidget,
-    QAbstractItemView, QHeaderView, QDialog, QListWidget
+    QAbstractItemView, QHeaderView, QDialog, QListWidget, QSlider, QSpinBox
 )
 
 from .backup import create_backup
@@ -24,7 +24,7 @@ from .parser import parse, render, is_time_placeholder
 from .sync import validate, validate_for_apply
 from .export import export_csv, export_xlsx
 from .dialogs import PresetManagerDialog, QuickRegisterDialog, ManicTimeSettingsDialog, StatisticsDialog, DirectorySettingsDialog, MediaSettingsDialog, BackupSettingsDialog
-from .media import (HOTKEYS, WM_HOTKEY, VK_VOLUME_UP, VK_VOLUME_DOWN, VK_VOLUME_MUTE, MediaSessionReader, send_media_key, send_session_action, register_global_hotkeys, unregister_global_hotkeys)
+from .media import (HOTKEYS, WM_HOTKEY, VK_VOLUME_UP, VK_VOLUME_DOWN, VK_VOLUME_MUTE, MediaSessionReader, send_media_key, send_session_action, register_global_hotkeys, unregister_global_hotkeys, seek_session_position)
 from .manictime import ManicTimeAdapter, ManicTimeConfig
 from .timestamps import assess_timestamp
 from .logging_utils import export_log
@@ -169,6 +169,12 @@ class MainWindow(QMainWindow):
         self._media_last_payload = None
         self._media_status_text = "メディア情報を待機中"
         self._backup_retry_at = None
+        self._fullscreen_window = None
+        self._fullscreen_blackout = False
+        self._timer_deadline = None
+        self._timer_remaining_seconds = 0
+        self._timer_running = False
+        self._media_seek_dragging = False
 
         self.mtc = ManicTimeAdapter(ManicTimeConfig(
             document_mode=db.get_setting("mt_document_mode", "material"),
