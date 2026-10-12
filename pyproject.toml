@@ -8,5 +8,11 @@ dependencies = [
     "openpyxl>=3.1",
 ]
 
+[project.optional-dependencies]
+windows-media = [
+    "winrt-runtime>=3.1.0",
+    "winrt-Windows.Media.Control>=3.1.0",
+]
+
 [project.scripts]
 study-tracker = "study_tracker.app:run"
