@@ -184,6 +184,7 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(250)
+        self._apply_media_settings()
 
     # ---- Menu ----
     def rebuild_menu(self):
