@@ -521,7 +521,7 @@ class MainWindow(QMainWindow):
             "任意依存関係が必要です。\n\n"
             "1. PowerShell で、StudyTracker を起動するものと同じ Python に対して次を実行します。\n"
             "   python -m pip install -e \".[windows-media]\"\n"
-            "   または: python -m pip install winrt-runtime winrt-Windows.Media.Control\n\n"
+            "   または: python -m pip install winrt-runtime winrt-Windows.Foundation winrt-Windows.Foundation.Collections winrt-Windows.Media.Control\n\n"
             "2. StudyTracker を再起動し、「設定」→「Windowsメディア操作」を有効にします。\n"
             "3. ブラウザや音楽プレーヤーで実際にメディアを再生し、メディアセッションが "
             "Windows の音量ミキサー / メディアフライアウトに表示されることを確認します。\n"
@@ -694,11 +694,11 @@ class MainWindow(QMainWindow):
         root = QWidget()
         layout = QVBoxLayout(root)
         if not self.session_id:
-            self.setWindowTitle("Study Tracker V3.5.7")
+            self.setWindowTitle("Study Tracker V3.5.8")
 
         self._add_error_banner(layout)
 
-        title = QLabel("Study Tracker V3.5.7")
+        title = QLabel("Study Tracker V3.5.8")
         title.setStyleSheet("font-size: 30px; font-weight: bold;")
         layout.addWidget(title)
 
@@ -1733,7 +1733,7 @@ class MainWindow(QMainWindow):
             r = self.current_rows[0]
             self.setWindowTitle(self.mtc.window_title(r.material, r.position))
         else:
-            self.setWindowTitle("Study Tracker V3.5.7")
+            self.setWindowTitle("Study Tracker V3.5.8")
 
     # ---- keep awake ----
     def apply_keep_awake(self, enabled):
