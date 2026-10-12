@@ -1464,6 +1464,7 @@ class MainWindow(QMainWindow):
         self.fullscreen_study_time.setText(
             f"Current  {fmt_duration(current_seconds)}    Total  {fmt_duration(total_seconds)}"
         )
+        self.fullscreen_study_time.setVisible(display_mode == "日本標準時")
         self._update_countdown()
         self.fullscreen_timer_value.setText(
             "終了" if self._timer_remaining_seconds == 0 and not self._timer_running
@@ -1480,7 +1481,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "fullscreen_playback_button"):
             status = str(selected.get("status", "")).lower() if selected else ""
             self.fullscreen_playback_button.setText(
-                "再生中" if status in {"playing", "4"} else "一時停止中"
+                "再生中" if status in {"playing", "4"}
+                else "一時停止中" if selected
+                else "状態不明"
             )
             self.fullscreen_playback_button.setToolTip(
                 "現在の再生状態: " + (status or "不明")
