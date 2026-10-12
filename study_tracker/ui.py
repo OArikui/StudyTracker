@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
     QPushButton, QComboBox, QLineEdit, QTextEdit, QTableWidget, QTableWidgetItem,
     QSplitter, QMessageBox, QGroupBox, QCheckBox, QFileDialog, QTabWidget,
-    QAbstractItemView, QHeaderView, QDialog, QListWidget, QSlider, QSpinBox
+    QAbstractItemView, QHeaderView, QDialog, QListWidget, QSlider, QSpinBox, QFrame, QApplication
 )
 
 from .backup import create_backup
@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1000, 650)
         self.statusBar().showMessage("準備完了")
         self.build_home()
+        self._apply_app_theme()
         self._escape_fullscreen = QShortcut(QKeySequence("Escape"), self)
         self._escape_fullscreen.activated.connect(self.exit_fullscreen)
 
@@ -246,8 +247,52 @@ class MainWindow(QMainWindow):
         backup_action = settings.addAction("定期バックアップ")
         backup_action.triggered.connect(self.open_backup_settings)
 
+        theme_menu = settings.addMenu("外観")
+        dark_action = theme_menu.addAction("ダークモード")
+        dark_action.triggered.connect(lambda: self._set_app_theme("dark"))
+        light_action = theme_menu.addAction("ライトモード")
+        light_action.triggered.connect(lambda: self._set_app_theme("light"))
+
         log_action = settings.addAction("エラーログをエクスポート")
         log_action.triggered.connect(self.save_error_log)
+
+    def _set_app_theme(self, theme):
+        theme = "light" if theme == "light" else "dark"
+        self.db.set_setting("app_theme", theme)
+        self._apply_app_theme()
+        self.statusBar().showMessage("外観を変更しました。", 4000)
+
+    def _apply_app_theme(self):
+        theme = self.db.get_setting("app_theme", "dark")
+        app = QApplication.instance()
+        if app is None:
+            return
+        if theme == "light":
+            app.setStyleSheet("""
+                QWidget { background-color: #f7f8fa; color: #20252b; }
+                QLineEdit, QTextEdit, QComboBox, QSpinBox, QTableWidget, QListWidget {
+                    background-color: #ffffff; color: #20252b; border: 1px solid #cbd2da;
+                    border-radius: 4px; padding: 4px;
+                }
+                QPushButton { background-color: #e8edf2; color: #20252b; border: 1px solid #c4ccd5;
+                    border-radius: 5px; padding: 7px 10px; }
+                QPushButton:hover { background-color: #dce5ee; }
+                QMenuBar, QMenu { background-color: #f7f8fa; color: #20252b; }
+                QHeaderView::section { background-color: #e8edf2; color: #20252b; padding: 5px; }
+            """)
+        else:
+            app.setStyleSheet("""
+                QWidget { background-color: #171a1f; color: #e7ebf0; }
+                QLineEdit, QTextEdit, QComboBox, QSpinBox, QTableWidget, QListWidget {
+                    background-color: #222831; color: #e7ebf0; border: 1px solid #414b58;
+                    border-radius: 4px; padding: 4px;
+                }
+                QPushButton { background-color: #2b333d; color: #f0f3f7; border: 1px solid #46515e;
+                    border-radius: 5px; padding: 7px 10px; }
+                QPushButton:hover { background-color: #374454; }
+                QMenuBar, QMenu { background-color: #20252c; color: #e7ebf0; }
+                QHeaderView::section { background-color: #2b333d; color: #e7ebf0; padding: 5px; }
+            """)
 
     def report_error(self, message):
         """Show errors in both the persistent footer and the current screen header."""
