@@ -929,17 +929,13 @@ class MainWindow(QMainWindow):
         self.mode = QComboBox()
         self.mode.addItems(["日本標準時", "カレント勉強時間", "合計勉強時間"])
         self.mode.currentTextChanged.connect(lambda _: self.tick())
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("メイン時間表示"))
-        mode_row.addWidget(self.mode)
-        mode_row.addStretch()
-        layout.addLayout(mode_row)
+        self.mode.hide()
 
         clock_row = QHBoxLayout()
         self.clock = QLabel()
         self.clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.clock.setMinimumHeight(125)
-        self.clock.setStyleSheet("font-size: 58px; font-weight: 700; padding: 8px;")
+        self.clock.setMinimumHeight(150)
+        self.clock.setStyleSheet("font-size: 44px; font-weight: 650; padding: 12px;")
         clock_row.addWidget(self.clock, 1)
 
         self.analog_clock_widget = AnalogStudyClock()
@@ -967,17 +963,19 @@ class MainWindow(QMainWindow):
         state_row.addWidget(end)
 
         self.analog_toggle = QCheckBox("アナログ時計を表示")
-        self.analog_toggle.setChecked(True)
+        self.analog_toggle.setChecked(False)
         self.analog_toggle.toggled.connect(self.analog_clock_widget.setVisible)
         state_row.addWidget(self.analog_toggle)
 
-        self.fullscreen_button = QPushButton("全画面表示")
-        self.fullscreen_button.setText(
-            "ウィンドウ表示" if self.isFullScreen() else "全画面表示"
-        )
-        self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
-        state_row.addWidget(self.fullscreen_button)
         layout.addLayout(state_row)
+        fullscreen_row = QHBoxLayout()
+        fullscreen_row.addStretch(1)
+        self.fullscreen_button = QPushButton("全画面表示")
+        self.fullscreen_button.setMinimumSize(180, 44)
+        self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
+        fullscreen_row.addWidget(self.fullscreen_button)
+        fullscreen_row.addStretch(1)
+        layout.addLayout(fullscreen_row)
 
         self.media_panel = QWidget()
         media_layout = QHBoxLayout(self.media_panel)
