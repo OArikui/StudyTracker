@@ -694,11 +694,11 @@ class MainWindow(QMainWindow):
         root = QWidget()
         layout = QVBoxLayout(root)
         if not self.session_id:
-            self.setWindowTitle("Study Tracker V3.5.6")
+            self.setWindowTitle("Study Tracker V3.5.7")
 
         self._add_error_banner(layout)
 
-        title = QLabel("Study Tracker V3.5.6")
+        title = QLabel("Study Tracker V3.5.7")
         title.setStyleSheet("font-size: 30px; font-weight: bold;")
         layout.addWidget(title)
 
@@ -1733,7 +1733,7 @@ class MainWindow(QMainWindow):
             r = self.current_rows[0]
             self.setWindowTitle(self.mtc.window_title(r.material, r.position))
         else:
-            self.setWindowTitle("Study Tracker V3.5.6")
+            self.setWindowTitle("Study Tracker V3.5.7")
 
     # ---- keep awake ----
     def apply_keep_awake(self, enabled):
