@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import Qt, QTimer, QPointF, QRectF
+from shiboken6 import isValid as is_qobject_valid
 from PySide6.QtGui import QColor, QPainter, QPen, QBrush, QKeySequence, QShortcut, QIntValidator
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
@@ -32,6 +33,16 @@ from .logging_utils import export_log
 
 JST = timezone(timedelta(hours=9))
 
+
+
+def _is_live_qobject(obj):
+    """Return whether a Qt wrapper still refers to a live C++ object."""
+    if obj is None:
+        return False
+    try:
+        return bool(is_qobject_valid(obj))
+    except (RuntimeError, TypeError):
+        return False
 
 
 def now_jst():
@@ -591,7 +602,7 @@ class MainWindow(QMainWindow):
     def _apply_media_settings(self):
         enabled = self.db.get_setting("media_enabled", "0") == "1"
         panel = getattr(self, "media_panel", None)
-        if panel is not None:
+        if _is_live_qobject(panel):
             panel.setVisible(enabled)
         if enabled and self._media_reader is None:
             self._media_reader = MediaSessionReader(self)
@@ -608,33 +619,41 @@ class MainWindow(QMainWindow):
             if self._media_registered_hotkeys:
                 unregister_global_hotkeys(int(self.winId()), self._media_registered_hotkeys)
                 self._media_registered_hotkeys = []
-        if hasattr(self, "media_status"):
-            self.media_status.setText(self._media_status_text)
+        media_status = getattr(self, "media_status", None)
+        if _is_live_qobject(media_status):
+            media_status.setText(self._media_status_text)
 
     def _on_media_status(self, status):
         self._media_status_text = status
-        if hasattr(self, "media_status"):
-            self.media_status.setText(status)
+        media_status = getattr(self, "media_status", None)
+        if _is_live_qobject(media_status):
+            media_status.setText(status)
 
     def _on_media_sessions(self, sessions):
         self._media_sessions = list(sessions)
         combo = getattr(self, "media_priority", None)
-        if combo is None:
+        if not _is_live_qobject(combo):
+            # The waiting screen may have been replaced while polling continued.
+            # Keep the snapshot for the active session without touching stale UI.
             self._record_media_snapshot()
             return
+
         previous = self.db.get_setting("media_priority", "")
-        combo.blockSignals(True)
-        combo.clear()
-        for session in self._media_sessions:
-            label = " — ".join(x for x in (session.get("title", ""), session.get("artist", ""), session.get("app_id", "")) if x)
-            combo.addItem(label or session.get("app_id", "Unknown media session"), session.get("app_id", ""))
-        idx = combo.findData(previous)
-        if idx >= 0:
-            combo.setCurrentIndex(idx)
-        elif combo.count():
-            combo.setCurrentIndex(0)
-            self.db.set_setting("media_priority", combo.currentData() or "")
-        combo.blockSignals(False)
+        signals_were_blocked = combo.blockSignals(True)
+        try:
+            combo.clear()
+            for session in self._media_sessions:
+                label = " — ".join(x for x in (session.get("title", ""), session.get("artist", ""), session.get("app_id", "")) if x)
+                combo.addItem(label or session.get("app_id", "Unknown media session"), session.get("app_id", ""))
+            idx = combo.findData(previous)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            elif combo.count():
+                combo.setCurrentIndex(0)
+                self.db.set_setting("media_priority", combo.currentData() or "")
+        finally:
+            if _is_live_qobject(combo):
+                combo.blockSignals(signals_were_blocked)
         self._record_media_snapshot()
 
     def _record_media_snapshot(self):
@@ -651,14 +670,15 @@ class MainWindow(QMainWindow):
             self.db.add_event(self.session_id, now_jst(), "media_state", payload)
 
     def _media_priority_changed(self, _index):
-        if not hasattr(self, "media_priority"):
+        combo = getattr(self, "media_priority", None)
+        if not _is_live_qobject(combo):
             return
-        self.db.set_setting("media_priority", self.media_priority.currentData() or "")
+        self.db.set_setting("media_priority", combo.currentData() or "")
         self._record_media_snapshot()
 
     def _selected_media_app_id(self):
         combo = getattr(self, "media_priority", None)
-        return str(combo.currentData() or "") if combo is not None else ""
+        return str(combo.currentData() or "") if _is_live_qobject(combo) else ""
 
     def _media_control(self, action):
         app_id = self._selected_media_app_id()
@@ -694,11 +714,11 @@ class MainWindow(QMainWindow):
         root = QWidget()
         layout = QVBoxLayout(root)
         if not self.session_id:
-            self.setWindowTitle("Study Tracker V3.5.8")
+            self.setWindowTitle("Study Tracker V3.5.9")
 
         self._add_error_banner(layout)
 
-        title = QLabel("Study Tracker V3.5.8")
+        title = QLabel("Study Tracker V3.5.9")
         title.setStyleSheet("font-size: 30px; font-weight: bold;")
         layout.addWidget(title)
 
@@ -1733,7 +1753,7 @@ class MainWindow(QMainWindow):
             r = self.current_rows[0]
             self.setWindowTitle(self.mtc.window_title(r.material, r.position))
         else:
-            self.setWindowTitle("Study Tracker V3.5.8")
+            self.setWindowTitle("Study Tracker V3.5.9")
 
     # ---- keep awake ----
     def apply_keep_awake(self, enabled):
