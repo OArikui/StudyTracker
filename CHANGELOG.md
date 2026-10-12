@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.5.5 — 2026-10-12
+
+### Fixed
+- setuptools の自動パッケージ検出が実行時データ用の `user_data` と本体の `study_tracker` を同時に検出して編集可能インストールに失敗する問題を修正。
+- 配布パッケージを `study_tracker` に限定し、Windows メディア用の editable install コマンドを CI で検証するよう変更。
+
 ## 3.5.4 — 2026-10-12
 
 ### Changed

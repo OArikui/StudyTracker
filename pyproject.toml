@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "study-tracker"
-version = "3.5.4"
+version = "3.5.5"
 description = "Personal study tracker designed to complement ManicTime"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,3 +20,9 @@ windows-media = [
 
 [project.scripts]
 study-tracker = "study_tracker.app:run"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["study_tracker", "study_tracker.*"]
+exclude = ["user_data", "user_data.*", "tests", "tests.*"]
+namespaces = false
