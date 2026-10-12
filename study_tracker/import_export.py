@@ -7,16 +7,16 @@ import json
 import os
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
+
 
 from openpyxl import load_workbook
 
 from .models import COLUMNS
 
-JST = ZoneInfo("Asia/Tokyo")
+JST = timezone(timedelta(hours=9))
 DATABASE_TABLES = {"sessions", "segments"}
 
 
