@@ -616,7 +616,7 @@ class MainWindow(QMainWindow):
 
         self._add_error_banner(layout)
 
-        title = QLabel("Study Tracker V3.4.0")
+        title = QLabel("Study Tracker V3.4.1")
         title.setStyleSheet("font-size: 30px; font-weight: bold;")
         layout.addWidget(title)
 
