@@ -112,3 +112,48 @@ class MediaSessionReader(QThread):
 
     def run(self) -> None:
         asyncio.run(self._poll())
+
+
+async def _try_session_action(app_id: str, action: str) -> bool:
+    from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager
+    manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
+    for session in manager.get_sessions():
+        if str(session.source_app_user_model_id) != app_id:
+            continue
+        method_name = {
+            "toggle": "try_toggle_play_pause_async",
+            "previous": "try_skip_previous_async",
+            "next": "try_skip_next_async",
+        }.get(action)
+        if not method_name:
+            return False
+        await getattr(session, method_name)()
+        return True
+    return False
+
+
+def send_session_action(app_id: str, action: str) -> None:
+    """Control the selected GSMTC session asynchronously, falling back to media keys."""
+    import threading
+
+    if not IS_WINDOWS or not app_id:
+        fallback = {"toggle": VK_MEDIA_PLAY_PAUSE, "previous": VK_MEDIA_PREV_TRACK,
+                    "next": VK_MEDIA_NEXT_TRACK}.get(action)
+        if fallback is not None:
+            send_media_key(fallback)
+        return
+
+    def worker():
+        try:
+            if not asyncio.run(_try_session_action(app_id, action)):
+                fallback = {"toggle": VK_MEDIA_PLAY_PAUSE, "previous": VK_MEDIA_PREV_TRACK,
+                            "next": VK_MEDIA_NEXT_TRACK}.get(action)
+                if fallback is not None:
+                    send_media_key(fallback)
+        except Exception:
+            fallback = {"toggle": VK_MEDIA_PLAY_PAUSE, "previous": VK_MEDIA_PREV_TRACK,
+                        "next": VK_MEDIA_NEXT_TRACK}.get(action)
+            if fallback is not None:
+                send_media_key(fallback)
+
+    threading.Thread(target=worker, daemon=True).start()
