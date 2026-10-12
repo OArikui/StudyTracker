@@ -1309,8 +1309,9 @@ class MainWindow(QMainWindow):
         stamp_save = QPushButton("記録")
         stamp_save.clicked.connect(self._record_fullscreen_stamp)
         controls.addWidget(stamp_save)
-        stamp_history_button = QPushButton("履歴")
+        stamp_history_button = QPushButton("履歴を表示")
         stamp_history_button.clicked.connect(self._toggle_fullscreen_stamp_history)
+        self.fullscreen_stamp_history_button = stamp_history_button
         controls.addWidget(stamp_history_button)
         blackout_button = QPushButton("画面を暗転 (B)")
         blackout_button.setMinimumHeight(40)
@@ -1321,6 +1322,10 @@ class MainWindow(QMainWindow):
         controls.addWidget(exit_button)
         controls.addStretch(1)
         media_layout.addLayout(controls)
+        self.fullscreen_stamp_history = QListWidget(media_frame)
+        self.fullscreen_stamp_history.setMaximumHeight(120)
+        self.fullscreen_stamp_history.hide()
+        media_layout.addWidget(self.fullscreen_stamp_history)
         root.addWidget(media_frame, 0)
         window._media_content = media_frame
 
@@ -1337,7 +1342,7 @@ class MainWindow(QMainWindow):
         self._fullscreen_window = window
         self._set_fullscreen_blackout(False)
         self._refresh_fullscreen_clock()
-        self._build_fullscreen_stamp_popup(window)
+        self._render_fullscreen_stamp_history()
         window.showFullScreen()
 
     def _build_fullscreen_stamp_popup(self, window):
@@ -1389,10 +1394,11 @@ class MainWindow(QMainWindow):
             return
         visible = not history.isVisible()
         history.setVisible(visible)
-        self.fullscreen_stamp_history_button.setText("履歴を隠す" if visible else "履歴を表示")
+        button = getattr(self, "fullscreen_stamp_history_button", None)
+        if button is not None:
+            button.setText("履歴を隠す" if visible else "履歴を表示")
         if visible:
             self._render_fullscreen_stamp_history()
-            self.fullscreen_stamp_popup.adjustSize()
 
     def _record_fullscreen_stamp(self):
         value = self.fullscreen_stamp_input.text().strip()
@@ -1474,7 +1480,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "fullscreen_playback_button"):
             status = str(selected.get("status", "")).lower() if selected else ""
             self.fullscreen_playback_button.setText(
-                "一時停止中" if status in {"playing", "4"} else "再生中 / 切替"
+                "再生中" if status in {"playing", "4"} else "一時停止中"
             )
             self.fullscreen_playback_button.setToolTip(
                 "現在の再生状態: " + (status or "不明")
