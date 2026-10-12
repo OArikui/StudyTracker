@@ -673,7 +673,8 @@ class DirectorySettingsDialog(QDialog):
             ("db_path", "SQLiteデータベース", self._config["db_path"], True, "db"),
             ("log_dir", "ログディレクトリ", self._config["log_dir"], True, "dir"),
             ("export_dir", "エクスポートディレクトリ", self._config["export_dir"], True, "dir"),
-            ("ViewerPackPath", "ViewerPackPath（ZIPファイル）", self._config.get("ViewerPackPath", self._config.get("viewer_pack_path", self._defaults["ViewerPackPath"])), True, "zip"),
+            ("ViewerPackPath", "ViewerPack ZIP（任意）", self._config.get("ViewerPackPath", self._config.get("viewer_pack_path", self._defaults["ViewerPackPath"])), True, "zip"),
+            ("ViewerFolderPath", "展開済みViewerPackフォルダ（任意）", self._config.get("ViewerFolderPath", ""), True, "viewer_dir"),
         ]
         for key, label, value, editable, kind in entries:
             edit = QLineEdit(value)
@@ -689,10 +690,14 @@ class DirectorySettingsDialog(QDialog):
             wrapper.setLayout(row)
             form.addRow(label, wrapper)
         root.addLayout(form)
-        root.addWidget(QLabel(
-            "ViewerPack ZIP名は StudyTrackerViewerPack_vx.x.x-<description>.zip を推奨します。"
-            "ZIP内には viewer_v0/ パッケージが必要です。"
-        ))
+        help_label = QLabel(
+            "ViewerPackはZIP、またはGitHubから展開したフォルダを指定できます。"
+            "GitHubのタグZIPは viewer_v0/ が複数階層の下に入っていても認識します。\n"
+            "導入手順: https://github.com/OArikui/StudyTracker/blob/main/README.md#viewerpack-の導入"
+        )
+        help_label.setWordWrap(True)
+        help_label.setOpenExternalLinks(True)
+        root.addWidget(help_label)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
@@ -700,7 +705,7 @@ class DirectorySettingsDialog(QDialog):
 
     def _browse(self, key, kind):
         current = self.edits[key].text().strip()
-        if kind == "dir":
+        if kind in {"dir", "viewer_dir"}:
             selected = QFileDialog.getExistingDirectory(self, "ディレクトリを選択", current or str(Path.home()))
         else:
             filters = "SQLite (*.sqlite3 *.db);;All files (*)" if kind == "db" else "ZIP files (*.zip);;All files (*)"
@@ -713,8 +718,11 @@ class DirectorySettingsDialog(QDialog):
     def _save(self):
         from .paths import save_config
         cfg = self._load_config()
-        for key in ("config_dir", "db_path", "log_dir", "export_dir", "ViewerPackPath"):
+        for key in ("config_dir", "db_path", "log_dir", "export_dir", "ViewerPackPath", "ViewerFolderPath"):
             value = self.edits[key].text().strip()
+            if not value and key == "ViewerFolderPath":
+                cfg[key] = ""
+                continue
             if not value:
                 QMessageBox.warning(self, "入力エラー", f"{key} は空欄にできません。")
                 return
@@ -723,10 +731,33 @@ class DirectorySettingsDialog(QDialog):
         if db_path.suffix.lower() not in {".sqlite3", ".db"}:
             QMessageBox.warning(self, "入力エラー", "SQLiteデータベースは .sqlite3 または .db ファイルを指定してください。")
             return
-        pack = Path(cfg["ViewerPackPath"])
-        if pack.suffix.lower() != ".zip":
+        pack_value = cfg["ViewerPackPath"].strip()
+        folder_value = cfg["ViewerFolderPath"].strip()
+        if not pack_value and not folder_value:
+            QMessageBox.warning(self, "入力エラー", "ViewerPack ZIPまたは展開済みフォルダを指定してください。")
+            return
+        if pack_value and Path(pack_value).suffix.lower() != ".zip":
             QMessageBox.warning(self, "入力エラー", "ViewerPackPathにはZIPファイルを指定してください。")
             return
+        if folder_value:
+            try:
+                from .viewerpack import resolve_viewer_package_parent
+                resolve_viewer_package_parent(folder_value)
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(self, "Viewerフォルダを確認できません", f"{exc}")
+                return
+        target_db = Path(cfg["db_path"]).expanduser().resolve()
+        current_db = getattr(getattr(self.parent(), "db", None), "path", None)
+        if target_db.is_file() and current_db is not None and target_db != Path(current_db).expanduser().resolve():
+            answer = QMessageBox.warning(
+                self, "既存の学習記録を開きます",
+                f"指定先には既存のDBがあります。\n{target_db}\n\n"
+                "このファイルは上書きされません。保存後は指定先の既存記録に切り替わります。続行しますか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         try:
             save_config(cfg)
         except OSError as exc:
@@ -779,8 +810,8 @@ class BackupSettingsDialog(QDialog):
 
         root = QVBoxLayout(self)
         root.addWidget(QLabel(
-            "SQLite の整合性を保つ方法でバックアップします。古い世代の削除は、"
-            "新しいバックアップの作成が成功した後に行います。"
+            "SQLite の整合性を保つ方法でバックアップします。古い世代の削除は、新しいバックアップの作成成功後に行います。\n"
+            "user_data や元のDBとは別の場所を選択し、可能なら別ドライブに保存してください。"
         ))
 
         self.enabled = QCheckBox("定期バックアップを有効にする")
@@ -805,7 +836,7 @@ class BackupSettingsDialog(QDialog):
         form.addRow("実行間隔", self.interval)
 
         self.directory = QLineEdit(
-            db.get_setting("backup_dir", str(db.path.parent / "backups"))
+            db.get_setting("backup_dir", str(Path.home() / "StudyTrackerBackups"))
         )
         choose = QPushButton("参照...")
         choose.clicked.connect(self.choose_directory)
@@ -872,6 +903,23 @@ class BackupSettingsDialog(QDialog):
         if not destination:
             QMessageBox.warning(self, "入力エラー", "バックアップ保存先を指定してください。")
             return
+        from .paths import USER_DATA_DIR
+        target = Path(destination).expanduser().resolve()
+        database_path = self.db.path.expanduser().resolve()
+        try:
+            inside_user_data = target == USER_DATA_DIR.resolve() or USER_DATA_DIR.resolve() in target.parents
+        except OSError:
+            inside_user_data = False
+        if inside_user_data or target.drive.lower() == database_path.drive.lower():
+            answer = QMessageBox.warning(
+                self, "バックアップ先の確認",
+                "バックアップ先が user_data 内、または元のDBと同じドライブです。\n"
+                "元データと同時に失われるリスクを下げるため、別ドライブを推奨します。\n\nこの保存先を使用しますか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
         self.db.set_setting("backup_enabled", "1" if self.enabled.isChecked() else "0")
         self.db.set_setting("backup_interval_hours", self.interval.currentData())
         self.db.set_setting("backup_dir", str(Path(destination).expanduser()))
