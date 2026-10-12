@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 import shutil
 import sys
+
+_CURRENT_LOG_PATH: Path | None = None
 
 
 def log_directory() -> Path:
@@ -23,22 +26,39 @@ def log_directory() -> Path:
 
 
 def log_path() -> Path:
-    return log_directory() / "study_tracker.log"
+    """Return this process' log file, creating a per-launch filename if needed."""
+    global _CURRENT_LOG_PATH
+    if _CURRENT_LOG_PATH is None:
+        stamp = datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
+        candidate = log_directory() / f"study_tracker_{stamp}.log"
+        suffix = 1
+        while candidate.exists():
+            candidate = log_directory() / f"study_tracker_{stamp}_{suffix}.log"
+            suffix += 1
+        _CURRENT_LOG_PATH = candidate
+    return _CURRENT_LOG_PATH
 
 
 def configure_logging() -> Path:
+    global _CURRENT_LOG_PATH
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    for existing in root.handlers:
+        if getattr(existing, "_study_tracker_handler", False):
+            configured = getattr(existing, "_study_tracker_path", None)
+            if configured:
+                _CURRENT_LOG_PATH = Path(configured)
+                return _CURRENT_LOG_PATH
+
     path = log_path()
     handler = logging.FileHandler(path, encoding="utf-8")
     handler.setFormatter(logging.Formatter(
         "%(asctime)s %(levelname)s %(name)s: %(message)s"
     ))
-    root = logging.getLogger()
-    root.setLevel(logging.INFO)
-    if not any(getattr(h, "_study_tracker_handler", False) for h in root.handlers):
-        handler._study_tracker_handler = True  # type: ignore[attr-defined]
-        root.addHandler(handler)
-    else:
-        handler.close()
+    handler._study_tracker_handler = True  # type: ignore[attr-defined]
+    handler._study_tracker_path = str(path)  # type: ignore[attr-defined]
+    root.addHandler(handler)
+    logging.getLogger("study_tracker").info("Log initialized: %s", path)
     return path
 
 
@@ -46,8 +66,8 @@ def export_log(destination: str | Path) -> Path:
     source = log_path()
     if not source.exists():
         source.write_text("StudyTracker log is empty.\n", encoding="utf-8")
-    target = Path(destination)
-    if source.resolve() == target.expanduser().resolve():
+    target = Path(destination).expanduser()
+    if source.resolve() == target.resolve():
         return source
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
