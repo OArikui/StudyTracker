@@ -117,9 +117,11 @@ class AnalogStudyClock(QWidget):
         for tick in range(60):
             angle = (90 - tick * 6) * 3.141592653589793 / 180
             major = tick % 5 == 0
+            if not major:
+                continue
             outer = face_radius - 5
-            inner = outer - (10 if major else 4)
-            painter.setPen(QPen(QColor("#596675" if major else "#bcc5cf"), 1.8 if major else 0.8))
+            inner = outer - 10
+            painter.setPen(QPen(QColor("#596675"), 1.8))
             painter.drawLine(
                 QPointF(cx + inner * math.cos(angle), cy - inner * math.sin(angle)),
                 QPointF(cx + outer * math.cos(angle), cy - outer * math.sin(angle)),
@@ -1441,27 +1443,22 @@ class MainWindow(QMainWindow):
         if not self.session_id or not hasattr(self, "clock"):
             return
         now = now_jst()
-        mode = self.mode.currentText()
-
-        if mode == "日本標準時":
-            value = now.strftime("%Y-%m-%d %H:%M:%S JST")
-        elif mode == "カレント勉強時間":
-            sec = self.current_active_accumulated
+        current_seconds = self.current_active_accumulated
+        if self.segment_started and self.active:
+            current_seconds += max(0, (now - self.segment_started).total_seconds())
+        if self.current_rows:
+            subject = self.current_rows[0].subject
+            material = self.current_rows[0].material
+            total_seconds = self.db.active_seconds(subject=subject, material=material)
             if self.segment_started and self.active:
-                sec += max(0, (now - self.segment_started).total_seconds())
-            value = f"Current {fmt_duration(sec)}"
+                total_seconds += max(0, (now - self.segment_started).total_seconds())
         else:
-            if not self.current_rows:
-                sec = 0
-            else:
-                subject = self.current_rows[0].subject
-                material = self.current_rows[0].material
-                sec = self.db.active_seconds(subject=subject, material=material)
-                if self.segment_started and self.active:
-                    sec += max(0, (now - self.segment_started).total_seconds())
-            value = f"Total {fmt_duration(sec)}"
+            total_seconds = 0
+        self.clock.setText(
+            f"{now.strftime('%H:%M:%S')} JST\n"
+            f"Current  {fmt_duration(current_seconds)}    Total  {fmt_duration(total_seconds)}"
+        )
 
-        self.clock.setText(value)
         self.current.setText(self.current_text())
         self.refresh_analog_clock()
         self._refresh_fullscreen_clock()
