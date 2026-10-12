@@ -878,10 +878,43 @@ class BackupSettingsDialog(QDialog):
         if selected:
             self.directory.setText(selected)
 
+    def _confirm_backup_location(self, destination):
+        from .paths import USER_DATA_DIR
+        target = Path(destination).expanduser().resolve()
+        database_path = self.db.path.expanduser().resolve()
+        roots = [USER_DATA_DIR]
+        try:
+            from .paths import APP_CONFIG_DIR
+            roots.append(APP_CONFIG_DIR / "user_data")
+        except ImportError:
+            pass
+        inside_user_data = False
+        for root in roots:
+            try:
+                resolved_root = root.resolve()
+                if target == resolved_root or resolved_root in target.parents:
+                    inside_user_data = True
+                    break
+            except OSError:
+                continue
+        same_drive = bool(target.drive and database_path.drive and target.drive.lower() == database_path.drive.lower())
+        if inside_user_data or same_drive:
+            answer = QMessageBox.warning(
+                self, "バックアップ先の確認",
+                "バックアップ先が user_data 内、または元のDBと同じドライブです。\n"
+                "元データと同時に失われるリスクを下げるため、別ドライブを推奨します。\n\nこの保存先を使用しますか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            return answer == QMessageBox.StandardButton.Yes
+        return True
+
     def create_now(self):
         destination = self.directory.text().strip()
         if not destination:
             QMessageBox.warning(self, "入力エラー", "バックアップ保存先を指定してください。")
+            return
+        if not self._confirm_backup_location(destination):
             return
         try:
             from .backup import create_backup
@@ -903,24 +936,8 @@ class BackupSettingsDialog(QDialog):
         if not destination:
             QMessageBox.warning(self, "入力エラー", "バックアップ保存先を指定してください。")
             return
-        from .paths import USER_DATA_DIR
-        target = Path(destination).expanduser().resolve()
-        database_path = self.db.path.expanduser().resolve()
-        try:
-            inside_user_data = target == USER_DATA_DIR.resolve() or USER_DATA_DIR.resolve() in target.parents
-        except OSError:
-            inside_user_data = False
-        same_drive = bool(target.drive and database_path.drive and target.drive.lower() == database_path.drive.lower())
-        if inside_user_data or same_drive:
-            answer = QMessageBox.warning(
-                self, "バックアップ先の確認",
-                "バックアップ先が user_data 内、または元のDBと同じドライブです。\n"
-                "元データと同時に失われるリスクを下げるため、別ドライブを推奨します。\n\nこの保存先を使用しますか？",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
+        if not self._confirm_backup_location(destination):
+            return
         self.db.set_setting("backup_enabled", "1" if self.enabled.isChecked() else "0")
         self.db.set_setting("backup_interval_hours", self.interval.currentData())
         self.db.set_setting("backup_dir", str(Path(destination).expanduser()))
