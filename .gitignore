@@ -1,1 +1,4 @@
 data/
+
+# Local settings, records, logs, exports, and downloaded ViewerPack files.
+user_data/
