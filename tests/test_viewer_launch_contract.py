@@ -8,7 +8,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 def _viewerpack_project() -> Path:
-    project = _viewerpack_project()
+    project = ROOT.parent / "viewerpack"
     if not project.is_dir():
         pytest.skip("ViewerPack source is maintained outside the StudyTracker repository.")
     return project
