@@ -44,7 +44,7 @@ def validate_database_file(path: str | Path) -> Path:
         raise FileNotFoundError(f"SQLiteファイルが見つかりません: {source}")
     connection = None
     try:
-        connection = sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True, timeout=30)
+        connection = sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True, timeout=30)
         integrity = connection.execute("PRAGMA integrity_check").fetchone()
         if integrity is None or integrity[0] != "ok":
             raise sqlite3.DatabaseError(f"整合性チェックに失敗しました: {integrity!r}")
