@@ -376,30 +376,69 @@ class MainWindow(QMainWindow):
         old_db = self.db.path.resolve()
         if DirectorySettingsDialog(self).exec() != QDialog.DialogCode.Accepted:
             return
-        from .paths import get_db_path
+
+        from .paths import get_db_path, load_config, save_config
         new_db = get_db_path().resolve()
-        if new_db != old_db:
+        if new_db == old_db:
+            QMessageBox.information(self, "設定", "パス設定を保存しました。")
+            return
+
+        if new_db.is_file():
+            answer = QMessageBox.warning(
+                self, "既存DBへの切り替え",
+                f"指定先には既存の学習記録があります。\n{new_db}\n\n"
+                "このファイルは上書きしません。指定先のDBへ切り替えますか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                cfg = load_config()
+                cfg["db_path"] = str(old_db)
+                save_config(cfg)
+                return
+        else:
             answer = QMessageBox.question(
                 self, "DB保存先の変更",
                 f"DB保存先が変更されました。\n現在: {old_db}\n新規: {new_db}\n\n"
-                "既存データを新しい場所へコピーしますか？",
+                "現在のDBを新しい場所へコピーしますか？\n"
+                "コピーしない場合、新しい空のDBを作成します。",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
             )
-            try:
-                new_db.parent.mkdir(parents=True, exist_ok=True)
-                self.db.close()
-                if answer == QMessageBox.StandardButton.Yes and old_db.exists() and not new_db.exists():
-                    shutil.copy2(old_db, new_db)
-                from .db import Database
-                self.db = Database(new_db)
-                QMessageBox.information(self, "設定", "パス設定を保存しました。")
-            except Exception as exc:
-                self.report_error(f"DB保存先を切り替えられませんでした: {exc}")
-                QMessageBox.critical(self, "DB切替エラー", str(exc))
-        else:
-            QMessageBox.information(self, "設定", "パス設定を保存しました。")
 
+        try:
+            new_db.parent.mkdir(parents=True, exist_ok=True)
+            if answer == QMessageBox.StandardButton.Yes and old_db.is_file() and not new_db.exists():
+                import sqlite3
+                target = sqlite3.connect(str(new_db), timeout=30)
+                try:
+                    self.db.con.backup(target)
+                    integrity = target.execute("PRAGMA integrity_check").fetchone()
+                    if integrity is None or integrity[0] != "ok":
+                        raise sqlite3.DatabaseError(f"DBコピーの整合性チェックに失敗しました: {integrity!r}")
+                finally:
+                    target.close()
+            self.db.close()
+            from .db import Database
+            self.db = Database(new_db)
+            self.mtc.config.document_mode = self.db.get_setting("mt_document_mode", "material")
+            self.mtc.config.server_url = self.db.get_setting("mt_server_url", "")
+            self.build_home()
+            QMessageBox.information(self, "設定", "パス設定を保存しました。")
+        except Exception as exc:
+            logging.getLogger("study_tracker.paths").exception("Database path switch failed")
+            from .db import Database
+            try:
+                self.db = Database(old_db)
+            except Exception:
+                self.report_error(f"DB保存先の切替に失敗し、元のDBも開けませんでした: {exc}")
+                QMessageBox.critical(self, "DB切替エラー", f"{exc}")
+                return
+            cfg = load_config()
+            cfg["db_path"] = str(old_db)
+            save_config(cfg)
+            self.report_error(f"DB保存先を切り替えられませんでした: {exc}")
+            QMessageBox.critical(self, "DB切替エラー", str(exc))
     def open_stats(self):
         StatisticsDialog(
             self.db,
@@ -449,7 +488,7 @@ class MainWindow(QMainWindow):
 
         try:
             destination = self.db.get_setting(
-                "backup_dir", str(self.db.path.parent / "backups")
+                "backup_dir", str(Path.home() / "StudyTrackerBackups")
             )
             try:
                 retention = int(self.db.get_setting("backup_retention_count", "14"))
@@ -1113,7 +1152,7 @@ class MainWindow(QMainWindow):
             r = self.current_rows[0]
             self.setWindowTitle(self.mtc.window_title(r.material, r.position))
         else:
-            self.setWindowTitle("Study Tracker V3.4.0")
+            self.setWindowTitle("Study Tracker V3.4.1")
 
     # ---- keep awake ----
     def apply_keep_awake(self, enabled):
