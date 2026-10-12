@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 windows-media = [
     "winrt-runtime>=3.1.0",
+    "winrt-Windows.Foundation>=3.1.0",
     "winrt-Windows.Media.Control>=3.1.0",
 ]
 
