@@ -245,6 +245,8 @@ class MainWindow(QMainWindow):
 
         media_action = settings.addAction("Windowsメディア操作")
         media_action.triggered.connect(self.open_media_settings)
+        media_help_action = settings.addAction("メディア取得の案内")
+        media_help_action.triggered.connect(self.show_media_help)
 
         backup_action = settings.addAction("定期バックアップ")
         backup_action.triggered.connect(self.open_backup_settings)
@@ -505,6 +507,27 @@ class MainWindow(QMainWindow):
         ManicTimeSettingsDialog(self.db, parent=self).exec()
         self.mtc.config.document_mode = self.db.get_setting("mt_document_mode", "material")
         self.mtc.config.server_url = self.db.get_setting("mt_server_url", "")
+
+    def show_media_help(self):
+        QMessageBox.information(
+            self,
+            "Windowsメディア情報の取得",
+            "メディア情報を取得するには、Windows 10/11 のメディアセッション (GSMTC) と "
+            "任意依存関係が必要です。\n\n"
+            "1. PowerShell で、StudyTracker を起動するものと同じ Python に対して次を実行します。\n"
+            "   python -m pip install -e \".[windows-media]\"\n"
+            "   または: python -m pip install winrt-runtime winrt-Windows.Media.Control\n\n"
+            "2. StudyTracker を再起動し、「設定」→「Windowsメディア操作」を有効にします。\n"
+            "3. ブラウザや音楽プレーヤーで実際にメディアを再生し、メディアセッションが "
+            "Windows の音量ミキサー / メディアフライアウトに表示されることを確認します。\n"
+            "4. 複数のセッションがある場合は、学習画面の「メディア優先対象」で選択します。\n\n"
+            "情報が出ない場合:\n"
+            "• 対応するプレーヤーを使用してください。すべてのアプリがセッション情報を公開するわけではありません。\n"
+            "• Python が複数ある場合は、起動時と同じ python.exe で依存関係をインストールします。\n"
+            "• StudyTracker を完全に終了して起動し直し、プレーヤーで再生を開始します。\n"
+            "• winrt 依存関係がない場合は、表示された案内に従ってインストールします。\n\n"
+            "依存関係がない場合も標準 Windows メディアキーによる再生操作は利用できます。"
+        )
 
     def open_media_settings(self):
         if MediaSettingsDialog(self.db, parent=self).exec() == QDialog.DialogCode.Accepted:
@@ -991,7 +1014,9 @@ class MainWindow(QMainWindow):
         for label, action in [("再生 / 一時停止", "toggle"), ("前", "previous"), ("次", "next"),
                               ("音量−", "volume_down"), ("音量+", "volume_up"), ("ミュート", "mute")]:
             button = QPushButton(label)
-            button.setMaximumWidth(130)
+            button.setMinimumHeight(38)
+            button.setMinimumWidth(92)
+            button.setMaximumWidth(150)
             button.clicked.connect(lambda checked=False, a=action: self._media_control(a))
             media_layout.addWidget(button)
         self.media_status = QLabel(self._media_status_text)
@@ -1371,10 +1396,19 @@ class MainWindow(QMainWindow):
         now = now_jst()
         self.fullscreen_date.setText(now.strftime("%Y年%m月%d日 (%a)"))
         self.fullscreen_clock.setText(now.strftime("%H:%M:%S"))
-        seconds = self.current_active_accumulated
+        current_seconds = self.current_active_accumulated
         if self.segment_started and self.active:
-            seconds += max(0, (now - self.segment_started).total_seconds())
-        self.fullscreen_study_time.setText(f"学習時間  {fmt_duration(seconds)}")
+            current_seconds += max(0, (now - self.segment_started).total_seconds())
+        if self.current_rows:
+            row = self.current_rows[0]
+            total_seconds = self.db.active_seconds(subject=row.subject, material=row.material)
+            if self.segment_started and self.active:
+                total_seconds += max(0, (now - self.segment_started).total_seconds())
+        else:
+            total_seconds = 0
+        self.fullscreen_study_time.setText(
+            f"Current  {fmt_duration(current_seconds)}    Total  {fmt_duration(total_seconds)}"
+        )
         self._update_countdown()
         self.fullscreen_timer_value.setText(
             "終了" if self._timer_remaining_seconds == 0 and not self._timer_running
