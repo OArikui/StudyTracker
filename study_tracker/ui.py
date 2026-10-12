@@ -18,11 +18,12 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QHeaderView, QDialog, QListWidget
 )
 
+from .backup import create_backup
 from .models import COLUMNS, StudyRow, build_actual_scope
 from .parser import parse, render, is_time_placeholder
 from .sync import validate, validate_for_apply
 from .export import export_csv, export_xlsx
-from .dialogs import PresetManagerDialog, QuickRegisterDialog, ManicTimeSettingsDialog, StatisticsDialog, DirectorySettingsDialog, MediaSettingsDialog
+from .dialogs import PresetManagerDialog, QuickRegisterDialog, ManicTimeSettingsDialog, StatisticsDialog, DirectorySettingsDialog, MediaSettingsDialog, BackupSettingsDialog
 from .media import (HOTKEYS, WM_HOTKEY, VK_VOLUME_UP, VK_VOLUME_DOWN, VK_VOLUME_MUTE, MediaSessionReader, send_media_key, send_session_action, register_global_hotkeys, unregister_global_hotkeys)
 from .manictime import ManicTimeAdapter, ManicTimeConfig
 from .timestamps import assess_timestamp
@@ -167,6 +168,7 @@ class MainWindow(QMainWindow):
         self._media_sessions = []
         self._media_last_payload = None
         self._media_status_text = "メディア情報を待機中"
+        self._backup_retry_at = None
 
         self.mtc = ManicTimeAdapter(ManicTimeConfig(
             document_mode=db.get_setting("mt_document_mode", "material"),
@@ -184,6 +186,11 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(250)
+
+        self.backup_timer = QTimer(self)
+        self.backup_timer.timeout.connect(self._maybe_run_scheduled_backup)
+        self.backup_timer.start(60_000)
+        QTimer.singleShot(1500, self._maybe_run_scheduled_backup)
         self._apply_media_settings()
 
     # ---- Menu ----
@@ -226,6 +233,9 @@ class MainWindow(QMainWindow):
 
         media_action = settings.addAction("Windowsメディア操作")
         media_action.triggered.connect(self.open_media_settings)
+
+        backup_action = settings.addAction("定期バックアップ")
+        backup_action.triggered.connect(self.open_backup_settings)
 
         log_action = settings.addAction("エラーログをエクスポート")
         log_action.triggered.connect(self.save_error_log)
@@ -369,6 +379,56 @@ class MainWindow(QMainWindow):
     def open_media_settings(self):
         if MediaSettingsDialog(self.db, parent=self).exec() == QDialog.DialogCode.Accepted:
             self._apply_media_settings()
+
+    def open_backup_settings(self):
+        if BackupSettingsDialog(self.db, parent=self).exec() == QDialog.DialogCode.Accepted:
+            self._backup_retry_at = None
+            self._maybe_run_scheduled_backup()
+
+    def _maybe_run_scheduled_backup(self):
+        if self.db.get_setting("backup_enabled", "0") != "1":
+            return
+
+        now = datetime.now().astimezone()
+        if self._backup_retry_at is not None and now < self._backup_retry_at:
+            return
+
+        last_value = self.db.get_setting("backup_last_at", "")
+        if last_value:
+            try:
+                last_backup = datetime.fromisoformat(last_value)
+                if last_backup.tzinfo is None:
+                    last_backup = last_backup.replace(tzinfo=now.tzinfo)
+                try:
+                    interval_hours = max(1, int(self.db.get_setting("backup_interval_hours", "24")))
+                except (TypeError, ValueError):
+                    interval_hours = 24
+                if (now - last_backup).total_seconds() < interval_hours * 3600:
+                    return
+            except (TypeError, ValueError):
+                logging.getLogger("study_tracker.backup").warning(
+                    "Invalid backup_last_at value; scheduling a backup now."
+                )
+
+        try:
+            destination = self.db.get_setting(
+                "backup_dir", str(self.db.path.parent / "backups")
+            )
+            try:
+                retention = int(self.db.get_setting("backup_retention_count", "14"))
+            except (TypeError, ValueError):
+                retention = 14
+            output = create_backup(self.db.path, destination, retention, now=now)
+            self.db.set_setting("backup_last_at", now.isoformat())
+            self._backup_retry_at = None
+            logging.getLogger("study_tracker.backup").info(
+                "Scheduled backup created: %s", output
+            )
+            self.statusBar().showMessage(f"バックアップを作成しました: {output}", 10000)
+        except Exception as exc:
+            self._backup_retry_at = now + timedelta(minutes=15)
+            logging.getLogger("study_tracker.backup").exception("Scheduled backup failed")
+            self.report_error(f"定期バックアップに失敗しました: {exc}")
 
     def _apply_media_settings(self):
         enabled = self.db.get_setting("media_enabled", "0") == "1"
@@ -715,6 +775,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "学習範囲を完了しました", completion_details)
 
     def closeEvent(self, event):
+        if hasattr(self, "backup_timer"):
+            self.backup_timer.stop()
         if self._media_reader is not None:
             self._media_reader.stop()
             self._media_reader = None
