@@ -1154,8 +1154,12 @@ class MainWindow(QMainWindow):
         media_content = getattr(window, "_media_content", None)
         if media_content is not None:
             media_content.setVisible(not self._fullscreen_blackout)
-        window.setStyleSheet("background: #000000;" if self._fullscreen_blackout else
-                             "background: #101318;")
+        if self._fullscreen_blackout:
+            window.setStyleSheet("background: #000000;")
+        elif self.db.get_setting("app_theme", "dark") == "light":
+            window.setStyleSheet("background: #f7f8fa; color: #20252b;")
+        else:
+            window.setStyleSheet("background: #101318; color: #e9edf2;")
         window.setCursor(Qt.CursorShape.BlankCursor if self._fullscreen_blackout else Qt.CursorShape.ArrowCursor)
 
     def _toggle_fullscreen_blackout(self):
@@ -1166,37 +1170,52 @@ class MainWindow(QMainWindow):
 
         window = QWidget(self, Qt.WindowType.Window)
         window.setWindowTitle("StudyTracker — デジタル時計")
-        window.setStyleSheet("background: #101318; color: #e9edf2;")
+        is_light = self.db.get_setting("app_theme", "dark") == "light"
+        window.setStyleSheet(
+            "background: #f7f8fa; color: #20252b;" if is_light
+            else "background: #101318; color: #e9edf2;"
+        )
         root = QVBoxLayout(window)
         root.setContentsMargins(48, 28, 48, 22)
         root.setSpacing(12)
 
         content = QWidget(window)
-        content.setStyleSheet("background: transparent; color: #e9edf2;")
+        content.setStyleSheet(
+            "background: transparent; color: #20252b;" if is_light
+            else "background: transparent; color: #e9edf2;"
+        )
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(8)
 
         self.fullscreen_date = QLabel()
         self.fullscreen_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.fullscreen_date.setStyleSheet("font-size: 20px; color: #929ba8;")
+        self.fullscreen_date.setStyleSheet(
+            "font-size: 20px; color: #707984;" if is_light else "font-size: 20px; color: #929ba8;"
+        )
         content_layout.addWidget(self.fullscreen_date)
 
         self.fullscreen_clock = QLabel()
         self.fullscreen_clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fullscreen_clock.setMinimumHeight(180)
         self.fullscreen_clock.setStyleSheet(
-            "font-size: 110px; font-weight: 300; letter-spacing: 2px; color: #f3f5f7;"
+            "font-size: 110px; font-weight: 300; letter-spacing: 2px; color: "
+            + ("#20252b;" if is_light else "#f3f5f7;")
         )
         content_layout.addWidget(self.fullscreen_clock, 1)
 
         self.fullscreen_study_time = QLabel()
         self.fullscreen_study_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.fullscreen_study_time.setStyleSheet("font-size: 18px; color: #87919f;")
+        self.fullscreen_study_time.setStyleSheet(
+            "font-size: 18px; color: #707984;" if is_light else "font-size: 18px; color: #87919f;"
+        )
         content_layout.addWidget(self.fullscreen_study_time)
 
         timer_frame = QFrame()
-        timer_frame.setStyleSheet("QFrame { background: #191e25; border-radius: 10px; }")
+        timer_frame.setStyleSheet(
+            "QFrame { background: #e8edf2; border-radius: 10px; }" if is_light
+            else "QFrame { background: #191e25; border-radius: 10px; }"
+        )
         timer_row = QHBoxLayout(timer_frame)
         timer_row.setContentsMargins(12, 8, 12, 8)
         timer_row.addStretch(1)
@@ -1225,6 +1244,8 @@ class MainWindow(QMainWindow):
 
         media_frame = QFrame()
         media_frame.setStyleSheet(
+            "QFrame { background: #e8edf2; border: 1px solid #c4ccd5; border-radius: 12px; }"
+            if is_light else
             "QFrame { background: #191e25; border: 1px solid #2c333d; border-radius: 12px; }"
         )
         media_layout = QVBoxLayout(media_frame)
