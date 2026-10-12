@@ -219,6 +219,8 @@ class MainWindow(QMainWindow):
 
         viewer = tools.addAction("学習記録ビューアー")
         viewer.triggered.connect(self.open_viewer)
+        load_data = tools.addAction("バックアップ / エクスポートを読み込む")
+        load_data.triggered.connect(self.load_data_file)
         csv_a = tools.addAction("CSV出力")
         csv_a.triggered.connect(self.save_csv)
         xlsx_a = tools.addAction("XLSX出力")
@@ -313,25 +315,60 @@ class MainWindow(QMainWindow):
         PresetManagerDialog(self.db, "unit", alias_mode=True, parent=self).exec()
 
     def open_viewer(self):
-        from .paths import get_viewer_pack_path
+        from .paths import get_viewer_pack_path, get_viewer_folder_path
+        from .viewerpack import MANUAL_URL, resolve_viewer_package_parent, _archive_package_prefix
+        import zipfile
+
+        folder = get_viewer_folder_path()
         pack = get_viewer_pack_path()
-        if not pack.is_file():
-            QMessageBox.warning(
-                self, "ViewerPackが未設定です",
-                f"ViewerPack ZIPが見つかりません。\n{pack}\n\n"
-                "設定 > 使用ディレクトリ・ViewerPack設定 でViewerPackPathを指定してください。"
-            )
-            self.open_directory_settings()
-            return
+        if folder is not None and str(folder).strip():
+            try:
+                resolve_viewer_package_parent(folder)
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(
+                    self, "展開済みViewerPackを確認できません",
+                    f"{exc}\n\n設定からフォルダを選び直してください。\n導入マニュアル: {MANUAL_URL}"
+                )
+                self.open_directory_settings()
+                return
+            launch_args = ["--viewer-folder", str(folder)]
+        else:
+            if not pack.is_file() or not zipfile.is_zipfile(pack):
+                QMessageBox.warning(
+                    self, "ViewerPackが未設定です",
+                    f"ViewerPack ZIPが見つからないか、ZIP形式ではありません。\n{pack}\n\n"
+                    f"設定 > 使用ディレクトリ・ViewerPack設定 でZIPまたは展開済みフォルダを指定してください。\n"
+                    f"導入マニュアル: {MANUAL_URL}"
+                )
+                self.open_directory_settings()
+                return
+            try:
+                with zipfile.ZipFile(pack) as archive:
+                    _archive_package_prefix(archive)
+            except (OSError, ValueError, zipfile.BadZipFile) as exc:
+                QMessageBox.warning(
+                    self, "ViewerPack ZIPを確認できません",
+                    f"{exc}\n導入マニュアル: {MANUAL_URL}"
+                )
+                self.open_directory_settings()
+                return
+            launch_args = ["--viewer-zip", str(pack)]
+
         try:
             if getattr(sys, "frozen", False):
-                command = [sys.executable, "--viewer-zip", str(pack)]
+                command = [sys.executable, *launch_args]
             else:
-                command = [sys.executable, str(Path(__file__).resolve().parents[1] / "main.py"), "--viewer-zip", str(pack)]
+                command = [
+                    sys.executable,
+                    str(Path(__file__).resolve().parents[1] / "main.py"),
+                    *launch_args,
+                ]
             subprocess.Popen(command, cwd=str(Path(__file__).resolve().parents[1]))
         except Exception as exc:
-            QMessageBox.critical(self, "Viewer起動エラー", f"ViewerPackを起動できませんでした。\n{exc}")
-
+            QMessageBox.critical(
+                self, "Viewer起動エラー",
+                f"ViewerPackを起動できませんでした。\n{exc}\n\n導入マニュアル: {MANUAL_URL}"
+            )
     def open_directory_settings(self):
         if self.session_id:
             QMessageBox.warning(self, "変更できません", "学習中はパス設定を変更できません。学習を終了してから開いてください。")
@@ -536,7 +573,7 @@ class MainWindow(QMainWindow):
         root = QWidget()
         layout = QVBoxLayout(root)
         if not self.session_id:
-            self.setWindowTitle("Study Tracker V3.4.0")
+            self.setWindowTitle("Study Tracker V3.4.1")
 
         self._add_error_banner(layout)
 
@@ -1145,6 +1182,106 @@ class MainWindow(QMainWindow):
             export_xlsx(self._history_rows(), self.db.aliases(), path)
 
 
+    def load_data_file(self):
+        """Import a SQLite backup or append an exported CSV/XLSX without data loss."""
+        if self.session_id:
+            QMessageBox.warning(
+                self, "読み込みできません",
+                "学習中はデータを読み込めません。セクションを終了してから実行してください。"
+            )
+            return
+
+        from .paths import get_path
+        initial_dir = get_path("export_dir")
+        initial_dir.mkdir(parents=True, exist_ok=True)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "バックアップ / エクスポートを読み込む",
+            str(initial_dir),
+            "StudyTracker data (*.sqlite3 *.db *.sqlite *.csv *.xlsx);;"
+            "SQLite backups (*.sqlite3 *.db *.sqlite);;CSV exports (*.csv);;Excel exports (*.xlsx)",
+        )
+        if not path:
+            return
+
+        source = Path(path).expanduser().resolve()
+        database_path = self.db.path.expanduser().resolve()
+        backup_dir = Path(
+            self.db.get_setting("backup_dir", str(Path.home() / "StudyTrackerBackups"))
+        ).expanduser().resolve()
+
+        if source.suffix.lower() in {".sqlite3", ".db", ".sqlite"}:
+            if source == database_path:
+                QMessageBox.information(self, "読み込み不要", "選択したファイルは現在使用中のDBです。")
+                return
+            answer = QMessageBox.warning(
+                self,
+                "バックアップから復元",
+                f"次のバックアップの内容に切り替えます。\n{source}\n\n"
+                "現在のDBは別名のSQLiteバックアップとして保存してから置き換えます。\n"
+                "復元後は、現在のDBにあった記録は保存済みバックアップから参照できます。続行しますか？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+
+            self.db.close()
+            try:
+                from .import_export import restore_database_snapshot
+                preserved = restore_database_snapshot(source, database_path, backup_dir)
+            except Exception as exc:
+                from .db import Database
+                self.db = Database(database_path)
+                logging.getLogger("study_tracker.import").exception("Database backup restore failed")
+                self.report_error(f"バックアップを読み込めませんでした: {exc}")
+                QMessageBox.critical(self, "読み込み失敗", f"現在のDBは置き換えられていません。\n{exc}")
+                return
+
+            from .db import Database
+            self.db = Database(database_path)
+            self.mtc.config.document_mode = self.db.get_setting("mt_document_mode", "material")
+            self.mtc.config.server_url = self.db.get_setting("mt_server_url", "")
+            self.build_home()
+            QMessageBox.information(
+                self, "復元完了",
+                f"バックアップを読み込みました。\n{source}\n\n"
+                f"読み込み前のDBは別名で保管しました。\n{preserved}"
+            )
+            return
+
+        if source.suffix.lower() not in {".csv", ".xlsx"}:
+            QMessageBox.warning(self, "形式が未対応です", "SQLite、CSV、XLSXファイルを指定してください。")
+            return
+
+        try:
+            from .import_export import import_export_file, preserve_database
+            preserved = preserve_database(database_path, backup_dir)
+            summary = import_export_file(self.db, source)
+        except Exception as exc:
+            logging.getLogger("study_tracker.import").exception("Export import failed")
+            self.report_error(f"エクスポートを読み込めませんでした: {exc}")
+            QMessageBox.critical(
+                self, "読み込み失敗",
+                f"既存データは維持されています。\n{exc}"
+            )
+            return
+
+        self.build_home()
+        details = (
+            f"読み込み件数: {summary.imported}\n"
+            f"読み飛ばし: {summary.skipped}\n"
+            f"新規エイリアス: {summary.aliases_added}\n\n"
+            f"読み込み前のDBバックアップ: {preserved}"
+        )
+        if summary.warnings:
+            details += "\n\n注意:\n" + "\n".join(summary.warnings[:8])
+            if len(summary.warnings) > 8:
+                details += f"\nほか {len(summary.warnings) - 8} 件"
+            QMessageBox.warning(self, "エクスポート読み込み結果", details)
+        else:
+            QMessageBox.information(self, "エクスポート読み込み完了", details)
+
 class EditorWindow(QDialog):
     def __init__(self, main: MainWindow, waiting=False):
         super().__init__(main)
@@ -1153,6 +1290,7 @@ class EditorWindow(QDialog):
         self.rows: list[StudyRow] = []
         self.synced = False
         self._loading = False
+        self._last_changed_view = "table"
 
         self.setWindowTitle("カレント学習内容の設定")
         self.resize(1450, 800)
@@ -1274,6 +1412,11 @@ class EditorWindow(QDialog):
         self.preserve_button.setEnabled(False)
         self.preserve_button.clicked.connect(lambda: self.apply(True))
         bottom.addWidget(self.preserve_button)
+
+        self.sync_apply_button = QPushButton("同期して適用")
+        self.sync_apply_button.setToolTip("テキストまたはテーブルの最新の編集内容を同期し、適用します。")
+        self.sync_apply_button.clicked.connect(self.sync_and_apply)
+        bottom.addWidget(self.sync_apply_button)
 
         self.apply_button = QPushButton("適用")
         self.apply_button.setEnabled(False)
@@ -1435,12 +1578,14 @@ class EditorWindow(QDialog):
     def mark_text_dirty(self):
         if self._loading:
             return
+        self._last_changed_view = "text"
         self.synced = False
         self.update_apply_state()
 
     def mark_table_dirty(self, *_):
         if self._loading:
             return
+        self._last_changed_view = "table"
         self.synced = False
         self.update_apply_state()
 
@@ -1534,6 +1679,58 @@ class EditorWindow(QDialog):
                 self.status.setText("同期済み・適用可能")
 
         self.update_apply_state()
+
+    def sync_and_apply(self):
+        """Synchronize whichever editor view changed most recently, then apply it."""
+        if self._last_changed_view == "text":
+            try:
+                rows = parse(self.text.toPlainText())
+            except ValueError as exc:
+                self.status.setText(f"エラー: {exc}")
+                self.main.report_error(f"テキストの同期に失敗しました: {exc}")
+                return
+            selected_category = self.pc.currentText().strip()
+            if selected_category:
+                for row in rows:
+                    if not row.category:
+                        row.category = selected_category
+            if not rows:
+                self.status.setText("エラー: テキストから学習内容を読み取れませんでした。")
+                return
+            self._loading = True
+            self.set_table(rows)
+            self.text.setPlainText(render(rows))
+            self._loading = False
+        else:
+            rows = self.get_table_rows()
+            if not rows:
+                QMessageBox.warning(self, "同期できません", "テーブルに学習内容を1行以上入力してください。")
+                return
+            self._loading = True
+            self.text.setPlainText(render(rows))
+            self._loading = False
+
+        self.rows = rows
+        self.synced = True
+        self.refresh_preset_selection(rows[0])
+        self.show_partial_validation(rows)
+        validation = validate_for_apply(self.main.db, rows)
+        if not validation.ok:
+            if validation.missing_presets:
+                names = ", ".join(dict.fromkeys(item[2] for item in validation.missing_presets))
+                QMessageBox.warning(
+                    self, "未登録プリセットがあります",
+                    f"同期は完了しましたが、次の項目を登録すると適用できます。\n{names}\n\n"
+                    "「未登録プリセットをクイック登録」から登録してください。"
+                )
+            elif validation.errors:
+                QMessageBox.warning(
+                    self, "適用できません",
+                    "同期は完了しましたが、入力内容の確認が必要です。\n"
+                    + "\n".join(validation.errors[:8])
+                )
+            return
+        self.apply(False)
 
     def quick_register_missing(self):
         rows = self.get_table_rows()
