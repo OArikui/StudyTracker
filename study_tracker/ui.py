@@ -251,6 +251,18 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.footer_log_label, 1)
         self.statusBar().addPermanentWidget(self.db_reload_button)
 
+    def _log_access(self, resource, path=None):
+        """Record user-initiated access to a screen or file at DEBUG level."""
+        logger = logging.getLogger("study_tracker.access")
+        if path is None:
+            logger.debug("アクセス: %s", resource)
+            return
+        try:
+            target = Path(path).expanduser().resolve()
+        except (OSError, RuntimeError, TypeError, ValueError):
+            target = path
+        logger.debug("アクセス: %s (%s)", resource, target)
+
     def _refresh_footer_log(self):
         """Show the newest persisted log record when no study session is active."""
         label = getattr(self, "footer_log_label", None)
@@ -308,6 +320,7 @@ class MainWindow(QMainWindow):
         from .paths import get_db_path
 
         target_path = get_db_path().expanduser().resolve()
+        self._log_access("SQLiteデータベース再読み込み", target_path)
         previous_db = self.db
         try:
             # Open the replacement first so a failed open leaves the current
@@ -333,7 +346,7 @@ class MainWindow(QMainWindow):
         self._apply_app_theme()
         self._apply_media_settings()
         self.build_home()
-        logging.getLogger("study_tracker").info("Database reloaded from %s", target_path)
+        logging.getLogger("study_tracker").debug("DB再読み込み完了: %s", target_path)
         self.statusBar().showMessage(f"DBを再読み込みしました: {target_path.name}", 5000)
         self._refresh_footer_log()
 
@@ -472,6 +485,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.error_banner)
 
     def save_error_log(self):
+        self._log_access("エラーログ出力ダイアログ")
         from .paths import get_path
         default_dir = get_path("export_dir")
         default_dir.mkdir(parents=True, exist_ok=True)
@@ -483,18 +497,24 @@ class MainWindow(QMainWindow):
             return
         try:
             export_log(path)
+            logging.getLogger("study_tracker.save").info(
+                "保存完了: 動作ログを %s に出力", Path(path).expanduser().resolve()
+            )
             self.clear_error()
             self.statusBar().showMessage(f"ログをエクスポートしました: {path}", 8000)
+            self._refresh_footer_log()
         except Exception as exc:
             logging.getLogger("study_tracker.ui").exception("Log export failed")
             self.report_error(f"ログを出力できませんでした: {exc}")
 
     def open_preset(self, kind):
+        self._log_access(f"プリセット設定: {kind}", self.db.path)
         PresetManagerDialog(self.db, kind, parent=self).exec()
         self.build_home()
 
     def open_material_preset(self):
         subject = self.home_subject.currentText().strip()
+        self._log_access(f"教材プリセット設定: {subject or '科目未選択'}", self.db.path)
         if not subject:
             QMessageBox.warning(self, "科目が必要です", "先に科目を選択してください。")
             return
@@ -502,9 +522,11 @@ class MainWindow(QMainWindow):
         self.build_home()
 
     def open_unit_aliases(self):
+        self._log_access("学習単位エイリアス設定", self.db.path)
         PresetManagerDialog(self.db, "unit", alias_mode=True, parent=self).exec()
 
     def open_viewer(self):
+        self._log_access("学習記録ビューアー")
         from .paths import get_viewer_pack_path, get_viewer_folder_path
         from .viewerpack import MANUAL_URL, resolve_viewer_package_parent, _archive_package_prefix
         import zipfile
@@ -553,6 +575,7 @@ class MainWindow(QMainWindow):
                     str(Path(__file__).resolve().parents[1] / "main.py"),
                     *launch_args,
                 ]
+            self._log_access("ViewerPack 起動", folder if folder is not None and str(folder).strip() else pack)
             subprocess.Popen(command, cwd=str(Path(__file__).resolve().parents[1]))
         except Exception as exc:
             QMessageBox.critical(
@@ -560,6 +583,7 @@ class MainWindow(QMainWindow):
                 f"ViewerPackを起動できませんでした。\n{exc}\n\n導入マニュアル: {MANUAL_URL}"
             )
     def open_directory_settings(self):
+        self._log_access("使用ディレクトリ・ViewerPack設定")
         if self.session_id:
             QMessageBox.warning(self, "変更できません", "学習中はパス設定を変更できません。学習を終了してから開いてください。")
             return
@@ -630,6 +654,7 @@ class MainWindow(QMainWindow):
             self.report_error(f"DB保存先を切り替えられませんでした: {exc}")
             QMessageBox.critical(self, "DB切替エラー", str(exc))
     def open_stats(self):
+        self._log_access("学習時間集計", self.db.path)
         StatisticsDialog(
             self.db,
             current_subject=self.home_subject.currentText().strip(),
@@ -638,11 +663,13 @@ class MainWindow(QMainWindow):
         ).exec()
 
     def open_mtc_settings(self):
+        self._log_access("ManicTime連携設定", self.db.path)
         ManicTimeSettingsDialog(self.db, parent=self).exec()
         self.mtc.config.document_mode = self.db.get_setting("mt_document_mode", "material")
         self.mtc.config.server_url = self.db.get_setting("mt_server_url", "")
 
     def show_media_help(self):
+        self._log_access("Windowsメディア取得の案内")
         QMessageBox.information(
             self,
             "Windowsメディア情報の取得",
@@ -664,10 +691,12 @@ class MainWindow(QMainWindow):
         )
 
     def open_media_settings(self):
+        self._log_access("Windowsメディア操作設定", self.db.path)
         if MediaSettingsDialog(self.db, parent=self).exec() == QDialog.DialogCode.Accepted:
             self._apply_media_settings()
 
     def open_backup_settings(self):
+        self._log_access("定期バックアップ設定", self.db.path)
         if BackupSettingsDialog(self.db, parent=self).exec() == QDialog.DialogCode.Accepted:
             self._backup_retry_at = None
             self._maybe_run_scheduled_backup()
@@ -708,8 +737,8 @@ class MainWindow(QMainWindow):
             output = create_backup(self.db.path, destination, retention, now=now)
             self.db.set_setting("backup_last_at", now.isoformat())
             self._backup_retry_at = None
-            logging.getLogger("study_tracker.backup").info(
-                "Scheduled backup created: %s", output
+            logging.getLogger("study_tracker.save").info(
+                "保存完了: 定期バックアップ %s", output
             )
             self.statusBar().showMessage(f"バックアップを作成しました: {output}", 10000)
         except Exception as exc:
@@ -902,6 +931,7 @@ class MainWindow(QMainWindow):
 
     # ---- Editor ----
     def open_editor(self, waiting=False):
+        self._log_access("カレント学習内容編集")
         dlg = EditorWindow(self, waiting=waiting)
         dlg.exec()
 
@@ -926,8 +956,8 @@ class MainWindow(QMainWindow):
         self.timestamp_locations = []
 
         self.db.add_event(self.session_id, self.segment_started, "session_start")
-        logging.getLogger("study_tracker").info(
-            "Study session started (session_id=%s)", self.session_id
+        logging.getLogger("study_tracker").debug(
+            "学習開始 (session_id=%s)", self.session_id
         )
         self._refresh_footer_log()
         self.update_title()
@@ -945,6 +975,7 @@ class MainWindow(QMainWindow):
         timestamps = self.db.timestamps_for_session(self.session_id, timestamp_start, end)
         timestamp_locations = [str(r["location"]) for r in timestamps]
 
+        saved_rows = 0
         if self.current_rows:
             for row in self.current_rows:
                 actual_scope = build_actual_scope(row.unit, row.scope, timestamp_locations)
@@ -985,6 +1016,12 @@ class MainWindow(QMainWindow):
                     d
                 )
                 self.db.touch_position(row.material, row.position, end)
+                saved_rows += 1
+        if saved_rows:
+            logging.getLogger("study_tracker.save").debug(
+                "保存完了: 学習区間データ %d件 (session_id=%s)",
+                saved_rows, self.session_id,
+            )
         self.refresh_analog_clock(force=True)
 
     def apply_rows(self, rows):
@@ -999,8 +1036,8 @@ class MainWindow(QMainWindow):
         self.current_active_accumulated = 0.0
         self.timestamp_locations = []
         self.update_title()
-        logging.getLogger("study_tracker").info(
-            "Current study content applied (%d row(s))", len(rows)
+        logging.getLogger("study_tracker").debug(
+            "学習内容を適用 (%d件)", len(rows)
         )
 
     def _update_active_button_visual(self):
@@ -1038,8 +1075,8 @@ class MainWindow(QMainWindow):
             now,
             "active" if self.active else "passive"
         )
-        logging.getLogger("study_tracker").info(
-            "Study activity state changed to %s", "ACTIVE" if self.active else "PASSIVE"
+        logging.getLogger("study_tracker").debug(
+            "学習状態を変更: %s", "ACTIVE" if self.active else "PASSIVE"
         )
         # Keep the waiting screen alive when Active/Passive changes. Rebuilding
         # it would discard the in-progress timestamp input (and reset view controls).
@@ -1089,8 +1126,8 @@ class MainWindow(QMainWindow):
         ended_session_id = self.session_id
         self._finish_current_segment(now)
         self.db.close_session(self.session_id, now)
-        logging.getLogger("study_tracker").info(
-            "Study session ended (session_id=%s)", ended_session_id
+        logging.getLogger("study_tracker").debug(
+            "学習終了 (session_id=%s)", ended_session_id
         )
         self.session_id = None
         self.segment_started = None
@@ -1101,6 +1138,9 @@ class MainWindow(QMainWindow):
         self.timestamp_locations = []
         self.release_keep_awake()
         self.build_home()
+        logging.getLogger("study_tracker.save").info(
+            "保存完了: 学習セッション %s の記録を保存しました", ended_session_id
+        )
         self._refresh_footer_log()
         if completion_details:
             QMessageBox.information(self, "学習範囲を完了しました", completion_details)
@@ -1815,6 +1855,9 @@ class MainWindow(QMainWindow):
             self.report_error(f"タイムスタンプを保存できませんでした: {exc}")
             return
         self.timestamp_locations.append((now, location))
+        logging.getLogger("study_tracker.save").debug(
+            "保存完了: タイムスタンプ %s (session_id=%s)", location, self.session_id
+        )
         actual_scope = build_actual_scope(unit, row.scope if row else "", [x[1] for x in self.timestamp_locations])
         self.timestamp_status.setText(f"最新: {now.astimezone(JST).strftime('%H:%M:%S')} / {location} → 実施範囲 {actual_scope or '(未判定)'}")
         self.timestamp_input.clear()
@@ -1920,12 +1963,16 @@ class MainWindow(QMainWindow):
         return self.db.archive_rows(active_only=True)
 
     def show_history(self):
+        self._log_access("学習記録アーカイブ", self.db.path)
         dlg = QMainWindow(self)
         dlg.setWindowTitle("学習記録アーカイブ")
         dlg.resize(1400, 650)
 
         table = QTableWidget()
         rows = self._history_rows()
+        logging.getLogger("study_tracker.access").debug(
+            "アクセス: 学習記録アーカイブ (%d件)", len(rows)
+        )
         table.setRowCount(len(rows))
         table.setColumnCount(len(COLUMNS))
         table.setHorizontalHeaderLabels(COLUMNS)
@@ -1941,24 +1988,43 @@ class MainWindow(QMainWindow):
         self._history_window = dlg
 
     def save_csv(self):
+        self._log_access("CSV出力")
         from .paths import get_path
         export_dir = get_path("export_dir")
         export_dir.mkdir(parents=True, exist_ok=True)
         path, _ = QFileDialog.getSaveFileName(self, "CSV出力", str(export_dir / "study_archive.csv"), "CSV (*.csv)")
         if path:
-            export_csv(self._history_rows(), path)
+            rows = self._history_rows()
+            output_path = Path(path).expanduser().resolve()
+            self._log_access("CSV保存先ファイル", output_path)
+            export_csv(rows, output_path)
+            logging.getLogger("study_tracker.save").info(
+                "保存完了: CSV %s (学習記録%d件)", output_path, len(rows)
+            )
+            self.statusBar().showMessage(f"CSVを保存しました: {output_path.name}", 6000)
+            self._refresh_footer_log()
 
     def save_xlsx(self):
+        self._log_access("XLSX出力")
         from .paths import get_path
         export_dir = get_path("export_dir")
         export_dir.mkdir(parents=True, exist_ok=True)
         path, _ = QFileDialog.getSaveFileName(self, "XLSX出力", str(export_dir / "study_archive.xlsx"), "Excel (*.xlsx)")
         if path:
-            export_xlsx(self._history_rows(), self.db.aliases(), path)
+            rows = self._history_rows()
+            output_path = Path(path).expanduser().resolve()
+            self._log_access("XLSX保存先ファイル", output_path)
+            export_xlsx(rows, self.db.aliases(), output_path)
+            logging.getLogger("study_tracker.save").info(
+                "保存完了: XLSX %s (学習記録%d件)", output_path, len(rows)
+            )
+            self.statusBar().showMessage(f"XLSXを保存しました: {output_path.name}", 6000)
+            self._refresh_footer_log()
 
 
     def load_data_file(self):
         """Import a SQLite backup or append an exported CSV/XLSX without data loss."""
+        self._log_access("バックアップ / エクスポート読み込み")
         if self.session_id:
             QMessageBox.warning(
                 self, "読み込みできません",
@@ -1980,6 +2046,7 @@ class MainWindow(QMainWindow):
             return
 
         source = Path(path).expanduser().resolve()
+        self._log_access("読み込み元ファイル", source)
         database_path = self.db.path.expanduser().resolve()
         backup_dir = Path(
             self.db.get_setting("backup_dir", str(Path.home() / "StudyTrackerBackups"))
@@ -2018,6 +2085,11 @@ class MainWindow(QMainWindow):
             self.mtc.config.document_mode = self.db.get_setting("mt_document_mode", "material")
             self.mtc.config.server_url = self.db.get_setting("mt_server_url", "")
             self.build_home()
+            logging.getLogger("study_tracker.save").info(
+                "読み込み完了: SQLiteバックアップ %s (復元前バックアップ: %s)",
+                source, preserved,
+            )
+            self._refresh_footer_log()
             QMessageBox.information(
                 self, "復元完了",
                 f"バックアップを読み込みました。\n{source}\n\n"
@@ -2043,6 +2115,11 @@ class MainWindow(QMainWindow):
             return
 
         self.build_home()
+        logging.getLogger("study_tracker.save").info(
+            "読み込み完了: %s (追加%d件、読み飛ばし%d件、エイリアス%d件)",
+            source, summary.imported, summary.skipped, summary.aliases_added,
+        )
+        self._refresh_footer_log()
         details = (
             f"読み込み件数: {summary.imported}\n"
             f"読み飛ばし: {summary.skipped}\n"
