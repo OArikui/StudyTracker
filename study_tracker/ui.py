@@ -999,6 +999,9 @@ class MainWindow(QMainWindow):
         self.current_active_accumulated = 0.0
         self.timestamp_locations = []
         self.update_title()
+        logging.getLogger("study_tracker").info(
+            "Current study content applied (%d row(s))", len(rows)
+        )
 
     def _update_active_button_visual(self):
         button = getattr(self, "active_button", None)
@@ -1034,6 +1037,9 @@ class MainWindow(QMainWindow):
             self.session_id,
             now,
             "active" if self.active else "passive"
+        )
+        logging.getLogger("study_tracker").info(
+            "Study activity state changed to %s", "ACTIVE" if self.active else "PASSIVE"
         )
         # Keep the waiting screen alive when Active/Passive changes. Rebuilding
         # it would discard the in-progress timestamp input (and reset view controls).
