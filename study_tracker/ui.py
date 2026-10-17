@@ -269,7 +269,7 @@ class MainWindow(QMainWindow):
                 stream.seek(max(0, end - 32768))
                 lines = stream.read().decode("utf-8", errors="replace").splitlines()
             pattern = re.compile(
-                r"^(?P<date>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2},\\d+) "
+                r"^(?P<date>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) "
                 r"(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) "
                 r"(?P<logger>[^:]+): (?P<message>.*)$"
             )
@@ -289,7 +289,7 @@ class MainWindow(QMainWindow):
             message = match.group("message").strip() or "(メッセージなし)"
             displayed = message if len(message) <= 180 else message[:177] + "..."
             label.setText(f"直近の動作ログ [{match.group('level')}] {displayed}")
-            label.setToolTip(f"{path}\\n{latest}")
+            label.setToolTip(f"{path}\n{latest}")
         except (OSError, RuntimeError, ValueError) as exc:
             label.setText("直近の動作ログ: 読み込み不可")
             label.setToolTip(str(exc))
