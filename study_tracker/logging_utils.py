@@ -42,7 +42,7 @@ def log_path() -> Path:
 def configure_logging() -> Path:
     global _CURRENT_LOG_PATH
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
+    root.setLevel(logging.DEBUG)
     for existing in root.handlers:
         if getattr(existing, "_study_tracker_handler", False):
             configured = getattr(existing, "_study_tracker_path", None)
